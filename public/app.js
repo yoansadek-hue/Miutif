@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, recentReleases } from "./music.js?v=2";
+import { searchArtists, recentReleases, playlistUrl } from "./music.js?v=3";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -190,6 +190,57 @@ function renderResults() {
     : `<li class="empty">Aucun artiste trouvé</li>`;
 }
 
+// Import d'une playlist partagée (le serveur lit la page music.apple.com)
+let playlists = store.get("playlists", []);
+
+function renderPlaylists() {
+  $("#playlists").innerHTML = playlists.map((p) => `
+    <div class="pl-item">
+      <span class="pl-name">${esc(p.title)}<br><span class="pl-sub">Playlist suivie · ${p.count} artiste${p.count > 1 ? "s" : ""} · relue à chaque ouverture</span></span>
+      <button data-unfollow="${esc(p.url)}" aria-label="Ne plus suivre cette playlist">×</button>
+    </div>`).join("");
+}
+
+async function importPlaylist(input) {
+  const url = playlistUrl(input);
+  if (!url) throw new Error("Colle un lien de playlist Apple Music (music.apple.com/…/playlist/…)");
+  const res = await api("playlist", { url });
+  const added = addArtists(res.artists);
+  const entry = { url, title: res.title, count: res.artists.length };
+  playlists = [entry, ...playlists.filter((p) => p.url !== url)];
+  store.set("playlists", playlists);
+  renderPlaylists();
+  return { added, ...entry };
+}
+
+async function importFromForm() {
+  const btn = $("#pl-go");
+  btn.disabled = true;
+  btn.textContent = "Import…";
+  try {
+    const r = await importPlaylist($("#pl-url").value);
+    $("#pl-url").value = "";
+    $("#pl-form").hidden = true;
+    toast(r.added
+      ? `${r.added} artiste${r.added > 1 ? "s" : ""} ajouté${r.added > 1 ? "s" : ""} depuis « ${r.title} »`
+      : `Tous les artistes de « ${r.title} » sont déjà suivis`);
+  } catch (e) {
+    toast(e.message);
+  } finally {
+    btn.disabled = false;
+    btn.textContent = "Importer";
+  }
+}
+
+/** À l'ouverture : les artistes ajoutés depuis dans tes playlists sont suivis automatiquement. */
+async function refreshPlaylists() {
+  let added = 0;
+  for (const p of playlists) {
+    try { added += (await importPlaylist(p.url)).added; } catch {}
+  }
+  if (added) toast(`${added} nouvel${added > 1 ? "s" : ""} artiste${added > 1 ? "s" : ""} trouvé${added > 1 ? "s" : ""} dans tes playlists`);
+}
+
 // Import de la librairie Apple Music (seulement si le serveur a une clé MusicKit)
 function loadMusicKit() {
   if (window.MusicKit) return Promise.resolve();
@@ -282,6 +333,29 @@ $("#enable").addEventListener("click", enableNotifications);
 $("#test").addEventListener("click", sendTest);
 $("#am-import").addEventListener("click", importAppleMusic);
 $("#reload").addEventListener("click", loadReleases);
+$("#pl-open").addEventListener("click", () => {
+  $("#pl-form").hidden = !$("#pl-form").hidden;
+  if (!$("#pl-form").hidden) $("#pl-url").focus();
+});
+$("#pl-go").addEventListener("click", importFromForm);
+$("#pl-url").addEventListener("keydown", (e) => { if (e.key === "Enter") importFromForm(); });
+$("#pl-paste").addEventListener("click", async () => {
+  try {
+    $("#pl-url").value = await navigator.clipboard.readText();
+    if (playlistUrl($("#pl-url").value)) importFromForm();
+  } catch {
+    $("#pl-url").focus();
+    toast("Appuie longuement dans le champ puis « Coller »");
+  }
+});
+$("#playlists").addEventListener("click", (e) => {
+  const url = e.target.closest("[data-unfollow]")?.dataset.unfollow;
+  if (!url) return;
+  playlists = playlists.filter((p) => p.url !== url);
+  store.set("playlists", playlists);
+  renderPlaylists();
+  toast("Playlist retirée (ses artistes restent suivis)");
+});
 $("#q").addEventListener("input", (e) => search(e.target.value.trim()));
 $("#results").addEventListener("click", (e) => {
   const id = e.target.closest("[data-add]")?.dataset.add;
@@ -324,6 +398,7 @@ async function start() {
   $("#install").hidden = !(isIOS && !standalone);
   renderNextTime();
   renderArtists();
+  renderPlaylists();
   renderReleases();
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
@@ -347,6 +422,7 @@ async function start() {
   // L'adresse d'abonnement peut changer : on la renvoie à chaque ouverture
   if (sub && Notification.permission === "granted") sync({ subscription: sub.toJSON() }).catch(() => {});
 
+  await refreshPlaylists();
   loadReleases();
 }
 

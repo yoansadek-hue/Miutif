@@ -91,6 +91,24 @@ h1 { font-size: 32px; font-weight: 800; letter-spacing: -0.03em; line-height: 1;
 .primary { background: #fff; color: #3a1580; flex: 1; }
 .ghost { background: rgba(255, 255, 255, 0.18); color: #fff; }
 .apple { width: 100%; background: linear-gradient(135deg, #fa2d48, #fc5c7d); color: #fff; }
+.playlist { width: 100%; background: var(--brand); color: #fff; box-shadow: 0 10px 26px rgba(150, 50, 235, 0.35); }
+.soft { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.pl-form { display: grid; gap: 10px; padding: 14px; border-radius: 18px; background: var(--card); border: 1px solid var(--line); }
+.hint { color: var(--muted); font-size: 14px; }
+.hint b { color: var(--ink); }
+.row { display: flex; gap: 10px; }
+.row .btn { flex: 1; }
+.pl-list { display: grid; gap: 8px; }
+.pl-list:empty { display: none; }
+.pl-item {
+  display: flex; align-items: center; gap: 10px; padding: 10px 10px 10px 14px; border-radius: 14px;
+  background: rgba(255, 64, 110, 0.1); border: 1px solid rgba(255, 64, 110, 0.25); font-size: 15px;
+}
+.pl-item .pl-name { flex: 1; min-width: 0; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; font-weight: 700; }
+.pl-item .pl-sub { color: var(--muted); font-size: 12px; font-weight: 500; }
+.pl-item button { border: 0; width: 26px; height: 26px; border-radius: 50%; flex: none; background: rgba(255, 255, 255, 0.1); color: var(--muted); font-size: 16px; }
+.divider { display: flex; align-items: center; gap: 10px; color: var(--muted); font-size: 13px; }
+.divider::before, .divider::after { content: ""; flex: 1; height: 1px; background: var(--line); }
 .link { background: none; border: 0; color: var(--gold); font-weight: 700; font-size: 14px; padding: 4px; }
 
 /* Sections */

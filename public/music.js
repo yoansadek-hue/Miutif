@@ -58,6 +58,44 @@ export function filterRecent(releases, { days = 30, now = Date.now(), dedupe = t
     });
 }
 
+/** Vérifie qu'un lien est bien une playlist Apple Music et renvoie l'adresse à lire. */
+export function playlistUrl(input) {
+  try {
+    const u = new URL(String(input).trim().match(/https?:\/\/\S+/)?.[0] || "");
+    if (u.protocol !== "https:" || !/^(embed\.)?music\.apple\.com$/.test(u.hostname)) return null;
+    if (!/^\/[a-z]{2}\/playlist\//.test(u.pathname)) return null;
+    return `https://music.apple.com${u.pathname}`;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Artistes d'une page de playlist music.apple.com (données intégrées « serialized-server-data »).
+ * Chaque titre liste ses artistes un par un (featurings compris), avec leur identifiant.
+ */
+export function parsePlaylistPage(html) {
+  const m = html.match(/<script[^>]*id="serialized-server-data"[^>]*>([\s\S]*?)<\/script>/);
+  if (!m) return null;
+  const artists = new Map();
+  const walk = (node) => {
+    if (Array.isArray(node)) { for (const x of node) walk(x); return; }
+    if (!node || typeof node !== "object") return;
+    if (Array.isArray(node.subtitleLinks)) {
+      for (const link of node.subtitleLinks) {
+        const d = link?.segue?.destination?.contentDescriptor;
+        const id = d?.kind === "artist" && d.identifiers?.storeAdamID;
+        if (id && link.title && !artists.has(String(id))) artists.set(String(id), { id: String(id), name: link.title });
+      }
+    }
+    for (const k in node) if (node[k] && typeof node[k] === "object") walk(node[k]);
+  };
+  walk(JSON.parse(m[1]));
+  const title = (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "Playlist")
+    .replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"');
+  return { title, artists: [...artists.values()] };
+}
+
 /** Sorties récentes des artistes donnés (une entrée par artiste suivi et par sortie si dedupe=false). */
 export async function recentReleases(artistIds, { country = "fr", days = 30, now = Date.now(), dedupe = true } = {}) {
   const found = new Map();

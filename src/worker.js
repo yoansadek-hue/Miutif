@@ -6,7 +6,7 @@
 // (scripts/fetch-releases.mjs) qui les publie dans un fichier JSON (env.DATA_URL) lu ici.
 
 import { generateVapidKeys, sendPush, b64url } from "./push.js";
-import { filterRecent } from "../public/music.js";
+import { filterRecent, playlistUrl, parsePlaylistPage } from "../public/music.js";
 
 const NOTIFY_HOUR = 11;   // heure locale des notifications
 const NEW_DAYS = 7;       // une sortie est « nouvelle » pendant 7 jours
@@ -47,6 +47,24 @@ async function api(request, url, env) {
     case "GET /api/token":
       if (!hasMusicKit(env)) return json({ error: "Connexion Apple Music non configurée" }, 404);
       return json({ token: await developerToken(env) });
+
+    // Import d'une playlist partagée : la page music.apple.com contient tous ses artistes
+    case "POST /api/playlist": {
+      const target = playlistUrl(body.url);
+      if (!target) return json({ error: "Ce n'est pas un lien de playlist Apple Music" }, 400);
+      const res = await fetch(target, {
+        headers: {
+          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+          "Accept-Language": "fr-FR,fr;q=0.9",
+        },
+        redirect: "follow",
+      });
+      if (res.status === 404) return json({ error: "Playlist introuvable : vérifie qu'elle est bien partagée" }, 404);
+      if (!res.ok) return json({ error: `Apple Music ne répond pas (${res.status})` }, 502);
+      const parsed = parsePlaylistPage(await res.text());
+      if (!parsed) return json({ error: "Impossible de lire cette playlist" }, 502);
+      return json(parsed);
+    }
 
     // Pour le robot : tous les artistes suivis (identifiants publics, sans lien avec les utilisateurs)
     case "GET /api/artists": {

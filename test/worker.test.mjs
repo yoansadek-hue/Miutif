@@ -41,6 +41,17 @@ globalThis.fetch = async (url, init = {}) => {
       { wrapperType: "collection", collectionId: 4, artistName: "Artiste B", collectionName: "Album B", releaseDate: day(3), collectionViewUrl: "https://music.apple.com/fr/album/b/4" },
     ] });
   }
+  if (url.startsWith("https://music.apple.com/")) {
+    if (!url.includes("pl.ok")) return new Response("introuvable", { status: 404 });
+    const link = (id, name) => ({ title: name, segue: { destination: { contentDescriptor: { kind: "artist", identifiers: { storeAdamID: id } } } } });
+    const data = { data: [{ sections: [{ items: [
+      { title: "Titre 1", subtitleLinks: [link("111", "Artiste A"), link("222", "Artiste B")] },
+      { title: "Titre 2", subtitleLinks: [link("111", "Artiste A")] },
+      { title: "Titre 3", subtitleLinks: [link("444", "Artiste D & co")] },
+    ] }] }] };
+    return new Response(`<html><head><meta property="og:title" content="Ma playlist &amp; moi"></head><body>
+      <script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script></body></html>`);
+  }
   if (url.startsWith(DATA_URL)) {
     robotReads++;
     return robotFile ? Response.json(robotFile) : new Response("404", { status: 404 });
@@ -75,6 +86,11 @@ check(rel[0].kind === "Single" && rel[0].title === "Neuf" && rel[0].artistId ===
 check(rel[0].url === "https://music.apple.com/fr/album/neuf/1" && rel[0].artwork.includes("600x600"), "sorties : lien Apple Music propre + pochette grand format");
 
 // --- Serveur
+const pl = await call("POST", "/api/playlist", { url: "Écoute https://music.apple.com/fr/playlist/ma-playlist/pl.ok?ls=1" });
+check(pl.status === 200 && pl.data.title === "Ma playlist & moi", "playlist : lien partagé lu, titre récupéré");
+check(JSON.stringify(pl.data.artists.map((a) => a.id)) === JSON.stringify(["111", "222", "444"]) && pl.data.artists[2].name === "Artiste D & co", "playlist : chaque artiste une seule fois, featurings compris");
+check((await call("POST", "/api/playlist", { url: "https://music.apple.com/fr/playlist/x/pl.absente" })).status === 404, "playlist : non partagée → message clair");
+check((await call("POST", "/api/playlist", { url: "https://exemple.com/fr/playlist/x" })).status === 400, "playlist : autre site refusé");
 const cfg = await call("GET", "/api/config");
 check(cfg.status === 200 && b64url.decode(cfg.data.vapidKey).length === 65, "config : clé VAPID créée au premier appel");
 check((await call("GET", "/api/config")).data.vapidKey === cfg.data.vapidKey, "config : la clé reste la même ensuite");
