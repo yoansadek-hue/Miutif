@@ -1,0 +1,12 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "miutif",
+  "main": "src/worker.js",
+  "compatibility_date": "2025-09-01",
+  "assets": { "directory": "./public", "binding": "ASSETS" },
+  // Base de données (artistes + abonnements). Wrangler la crée tout seul au premier déploiement.
+  "kv_namespaces": [{ "binding": "DB" }],
+  // Réveil toutes les heures : chaque téléphone est notifié quand il est 11 h chez lui.
+  "triggers": { "crons": ["0 * * * *"] },
+  "observability": { "enabled": true }
+}

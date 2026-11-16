@@ -1,0 +1,88 @@
+<!doctype html>
+<html lang="fr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#140a2b">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="Miutif">
+<meta name="description" content="Les nouvelles sorties de tes artistes, chaque jour à 11 h.">
+<title>Miutif</title>
+<link rel="manifest" href="/manifest.webmanifest">
+<link rel="icon" type="image/png" href="/icons/favicon.png">
+<link rel="apple-touch-icon" href="/icons/apple-touch-icon.png">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Bricolage+Grotesque:opsz,wght@12..96,500;12..96,700;12..96,800&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/style.css?v=1">
+</head>
+<body>
+<main class="app">
+  <header class="top">
+    <img src="/icons/icon-192.png" alt="" class="logo">
+    <div>
+      <h1>Miutif</h1>
+      <p class="tagline">Les sorties de tes artistes, chaque jour à&nbsp;11&nbsp;h</p>
+    </div>
+  </header>
+
+  <!-- iPhone dans Safari : il faut d'abord l'ajouter à l'écran d'accueil -->
+  <section id="install" class="card install" hidden>
+    <h2>Ajoute Miutif à ton écran d'accueil</h2>
+    <p>Sur iPhone, les notifications ne marchent que depuis l'écran d'accueil.</p>
+    <ol>
+      <li>Touche <span class="key"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M12 3v12M7.5 7.5 12 3l4.5 4.5M5 11v9h14v-9" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/></svg> Partager</span> en bas de Safari</li>
+      <li>Choisis <span class="key">Sur l'écran d'accueil</span></li>
+      <li>Ouvre Miutif depuis son icône</li>
+    </ol>
+  </section>
+
+  <section class="card hero" id="notif">
+    <div class="bell" aria-hidden="true">
+      <svg viewBox="0 0 24 24"><path d="M6 16V11a6 6 0 1 1 12 0v5l1.5 2h-15L6 16Zm4 4a2 2 0 0 0 4 0" fill="none" stroke="currentColor" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/></svg>
+      <i class="dot"></i>
+    </div>
+    <div class="hero-text">
+      <p class="eyebrow">Prochaine notification</p>
+      <p class="big" id="next">Demain · 11:00</p>
+      <p class="small" id="notif-state">Notifications désactivées</p>
+    </div>
+    <div class="hero-actions">
+      <button class="btn primary" id="enable">Activer les notifications</button>
+      <button class="btn ghost" id="test" hidden>Envoyer un test</button>
+    </div>
+  </section>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>Mes artistes <span class="count" id="count">0</span></h2>
+    </div>
+    <button class="btn apple" id="am-import" hidden>
+      <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M9 18V6l11-2v12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/><circle cx="6.5" cy="18" r="2.5" fill="currentColor"/><circle cx="17.5" cy="16" r="2.5" fill="currentColor"/></svg>
+      Importer ma librairie Apple Music
+    </button>
+    <div class="search">
+      <svg viewBox="0 0 24 24" aria-hidden="true"><circle cx="11" cy="11" r="7" fill="none" stroke="currentColor" stroke-width="2"/><path d="m20 20-3.5-3.5" stroke="currentColor" stroke-width="2" stroke-linecap="round"/></svg>
+      <input id="q" type="search" placeholder="Ajouter un artiste…" autocomplete="off" enterkeyhint="search">
+    </div>
+    <ul class="results" id="results" hidden></ul>
+    <div class="chips" id="artists"></div>
+    <p class="empty" id="artists-empty">Ajoute les artistes que tu écoutes : tu seras prévenu de chacune de leurs sorties.</p>
+  </section>
+
+  <section class="block">
+    <div class="block-head">
+      <h2>Sorties récentes</h2>
+      <button class="link" id="reload">Actualiser</button>
+    </div>
+    <ul class="releases" id="releases"></ul>
+    <p class="empty" id="releases-empty" hidden>Aucune sortie ces 30 derniers jours pour tes artistes.</p>
+  </section>
+
+  <footer class="foot">Touche une sortie pour l'ouvrir dans Apple Music.</footer>
+</main>
+<div class="toast" id="toast" role="status" aria-live="polite"></div>
+<script src="/app.js?v=1" type="module"></script>
+</body>
+</html>
