@@ -1,4 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
+import { searchArtists, recentReleases } from "./music.js?v=2";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -17,7 +18,7 @@ if (!userId) {
   store.set("id", userId);
 }
 let artists = store.get("artists", []);
-let config = { hour: 11, appleMusic: false, vapidKey: null };
+let config = { hour: 11, appleMusic: false, vapidKey: null, country: store.get("country", "fr") };
 
 // ---------- Utilitaires ----------
 
@@ -166,8 +167,7 @@ let lastResults = [];
 const search = debounce(async (q) => {
   if (!q) { $("#results").hidden = true; return; }
   try {
-    const { artists: found } = await api(`search?q=${encodeURIComponent(q)}`);
-    lastResults = found;
+    lastResults = await searchArtists(q, config.country);
     renderResults();
   } catch (e) {
     toast(e.message);
@@ -268,7 +268,7 @@ async function loadReleases() {
   if (!artists.length) { releases = []; renderReleases(); return; }
   renderReleases(true);
   try {
-    ({ releases } = await api("releases", { ids: artists.map((a) => a.id) }));
+    releases = await recentReleases(artists.map((a) => a.id), { country: config.country, days: 30 });
     store.set("releases", releases);
   } catch (e) {
     toast(e.message);
@@ -330,6 +330,7 @@ async function start() {
 
   try {
     config = await api("config");
+    store.set("country", config.country);
     renderNextTime();
     $("#am-import").hidden = !config.appleMusic;
   } catch {}

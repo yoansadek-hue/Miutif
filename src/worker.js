@@ -2,9 +2,11 @@
 // - sert l'appli (dossier public/)
 // - garde pour chaque téléphone : ses artistes + son abonnement aux notifications (KV « DB »)
 // - chaque heure, un réveil (cron) envoie les notifs aux téléphones pour qui il est 11 h
+// Apple bloque les serveurs Cloudflare : les sorties sont récupérées par un robot GitHub
+// (scripts/fetch-releases.mjs) qui les publie dans un fichier JSON (env.DATA_URL) lu ici.
 
 import { generateVapidKeys, sendPush, b64url } from "./push.js";
-import { searchArtists, recentReleases } from "./music.js";
+import { filterRecent } from "../public/music.js";
 
 const NOTIFY_HOUR = 11;   // heure locale des notifications
 const NEW_DAYS = 7;       // une sortie est « nouvelle » pendant 7 jours
@@ -46,14 +48,14 @@ async function api(request, url, env) {
       if (!hasMusicKit(env)) return json({ error: "Connexion Apple Music non configurée" }, 404);
       return json({ token: await developerToken(env) });
 
-    case "GET /api/search": {
-      const q = (url.searchParams.get("q") || "").trim().slice(0, 80);
-      return json({ artists: q ? await searchArtists(q, country) : [] });
-    }
-
-    case "POST /api/releases": {
-      const ids = cleanIds(body.ids);
-      return json({ releases: ids.length ? await recentReleases(ids, { country, days: 30 }) : [] });
+    // Pour le robot : tous les artistes suivis (identifiants publics, sans lien avec les utilisateurs)
+    case "GET /api/artists": {
+      const countries = {};
+      await forEachUser(env, async (_, user) => {
+        const set = (countries[user.country || "fr"] ||= new Set());
+        for (const a of user.artists || []) set.add(a.id);
+      });
+      return json({ countries: Object.fromEntries(Object.entries(countries).map(([c, s]) => [c, [...s]])) });
     }
 
     case "GET /api/user": {
@@ -83,8 +85,8 @@ async function api(request, url, env) {
       user.lastTest = Date.now();
       await env.DB.put(`u:${id}`, JSON.stringify(user));
 
-      const ids = (user.artists || []).map((a) => a.id);
-      const [latest] = ids.length ? await recentReleases(ids, { country: user.country, days: 365 }) : [];
+      const data = await releaseData(env).catch(() => ({})); // robot pas encore passé : message générique
+      const [latest] = releasesFor(user, data, { days: 30, now: Date.now() });
       const payload = latest
         ? { ...releasePayload(latest), title: `Test · ${releasePayload(latest).title}` }
         : { title: "Miutif", body: "Les notifications marchent ! Rendez-vous à 11 h.", url: "/" };
@@ -97,32 +99,49 @@ async function api(request, url, env) {
 
 // ---------- Envoi quotidien de 11 h ----------
 
-async function dailyRun(env, now) {
-  const keys = await vapid(env);
+async function forEachUser(env, fn) {
   let cursor;
   do {
     const page = await env.DB.list({ prefix: "u:", cursor });
     for (const { name } of page.keys) {
-      try {
-        await notifyUser(env, name, keys, now);
-      } catch (e) {
-        console.error(`Envoi raté pour ${name} :`, e.message);
-      }
+      const user = await env.DB.get(name, "json");
+      if (user) await fn(name, user);
     }
     cursor = page.list_complete ? null : page.cursor;
   } while (cursor);
 }
 
-async function notifyUser(env, key, keys, now) {
-  const user = await env.DB.get(key, "json");
-  if (!user?.sub || !user.artists?.length) return;
+/** Sorties publiées par le robot GitHub : { updated, byCountry: { fr: [...] } } */
+async function releaseData(env) {
+  const res = await fetch(`${env.DATA_URL}?t=${Math.floor(Date.now() / 300000)}`);
+  if (!res.ok) throw new Error(`Fichier des sorties introuvable (${res.status})`);
+  return res.json();
+}
 
-  const { hour, day } = localTime(now, user.tz || "Europe/Paris");
-  if (hour !== NOTIFY_HOUR || user.lastRun === day) return;
+function releasesFor(user, data, { days, now }) {
+  const mine = new Set((user.artists || []).map((a) => a.id));
+  const list = data.byCountry?.[user.country] || data.byCountry?.fr || [];
+  return filterRecent(list.filter((r) => mine.has(r.artistId)), { days, now });
+}
 
-  const releases = await recentReleases(user.artists.map((a) => a.id), {
-    country: user.country, days: NEW_DAYS, now: now.getTime(),
+async function dailyRun(env, now) {
+  const keys = await vapid(env);
+  let data = null;
+  await forEachUser(env, async (key, user) => {
+    try {
+      if (!user.sub || !user.artists?.length) return;
+      const { hour, day } = localTime(now, user.tz || "Europe/Paris");
+      if (hour !== NOTIFY_HOUR || user.lastRun === day) return;
+      data ||= await releaseData(env); // lu une seule fois, et seulement s'il y a quelqu'un à notifier
+      await notifyUser(env, key, user, data, keys, now, day);
+    } catch (e) {
+      console.error(`Envoi raté pour ${key} :`, e.message);
+    }
   });
+}
+
+async function notifyUser(env, key, user, data, keys, now, day) {
+  const releases = releasesFor(user, data, { days: NEW_DAYS, now: now.getTime() });
   const notified = user.notified || {};
   const fresh = releases.filter((r) => !notified[r.id]);
 
@@ -199,7 +218,6 @@ async function developerToken(env) {
 // ---------- Validation ----------
 
 const cleanUserId = (v) => (typeof v === "string" && /^[a-z0-9]{16,40}$/.test(v) ? v : null);
-const cleanIds = (v) => (Array.isArray(v) ? v.map(String).filter((x) => /^\d{1,15}$/.test(x)).slice(0, 2000) : []);
 const cleanArtists = (list) => {
   const seen = new Set();
   return list

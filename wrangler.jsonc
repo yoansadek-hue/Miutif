@@ -5,7 +5,9 @@
   "compatibility_date": "2025-09-01",
   "assets": { "directory": "./public", "binding": "ASSETS" },
   // Base de données (artistes + abonnements). Wrangler la crée tout seul au premier déploiement.
-  "kv_namespaces": [{ "binding": "DB" }],
+  "kv_namespaces": [{ "binding": "DB", "id": "ab975aac3e264976a77b8a68aa1ce6ee" }],
+  // Fichier des sorties publié chaque heure par le robot GitHub (.github/workflows/sorties.yml)
+  "vars": { "DATA_URL": "https://raw.githubusercontent.com/yoansadek-hue/Miutif/data/releases.json" },
   // Réveil toutes les heures : chaque téléphone est notifié quand il est 11 h chez lui.
   "triggers": { "crons": ["0 * * * *"] },
   "observability": { "enabled": true }

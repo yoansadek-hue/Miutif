@@ -1,0 +1,44 @@
+# Chaque heure : récupère chez Apple les sorties des artistes suivis et les publie
+# sur la branche « data » (fichier releases.json), lue par le serveur pour les notifs de 11 h.
+# (Apple bloque les serveurs Cloudflare, d'où ce relais par GitHub.)
+name: Sorties
+
+on:
+  schedule:
+    - cron: "17 * * * *"
+  workflow_dispatch:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+  actions: write
+
+concurrency:
+  group: sorties
+  cancel-in-progress: false
+
+jobs:
+  fetch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+      - name: Récupérer les sorties chez Apple
+        run: node scripts/fetch-releases.mjs out/releases.json
+      - name: Publier sur la branche data
+        working-directory: out
+        run: |
+          git init -q -b data
+          git config user.name "miutif-bot"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add releases.json
+          git commit -qm "Sorties $(date -u '+%F %H:%M')"
+          git push -qf "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}.git" data
+      - name: Garder le robot actif (GitHub coupe les tâches planifiées après 60 jours sans activité)
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: gh api -X PUT "repos/${{ github.repository }}/actions/workflows/sorties.yml/enable" || true
