@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, recentReleases, playlistUrl, discography } from "./music.js?v=9";
+import { searchArtists, recentReleases, playlistUrl, discography, featOf } from "./music.js?v=10";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -361,14 +361,21 @@ function dayLabel(date) {
   return { big: cap, small: "" };
 }
 
-const releaseRow = (r) => `
+const releaseRow = (r) => {
+  const feat = featOf(r, artists.find((a) => a.id === r.artistId)?.name);
+  return `
   <li>
     <button class="main" data-url="${esc(r.url)}">
       <img class="cover" src="${esc(r.artwork)}" alt="" loading="lazy">
-      <span class="lines"><b>${esc(r.title)}</b><span>${esc(r.artist)} · ${esc(r.kind)}</span></span>
+      <span class="lines">
+        <b>${esc(r.title)}</b>
+        <span>${esc(r.artist)} · ${esc(r.kind)}</span>
+        ${feat ? `<span class="feat">feat. ${esc(feat)}</span>` : ""}
+      </span>
       ${ICON_CHEV}
     </button>
   </li>`;
+};
 
 function renderNews(loading = false) {
   const box = $("#news");

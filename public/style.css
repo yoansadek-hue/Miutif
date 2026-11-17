@@ -124,6 +124,10 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .lines { flex: 1; min-width: 0; display: grid; gap: 1px; }
 .lines b { font-weight: 600; font-size: 16px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .lines span { color: var(--muted); font-size: 14px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.lines .feat {
+  justify-self: start; margin-top: 3px; padding: 1px 7px; border-radius: 6px;
+  background: rgba(255, 255, 255, 0.1); color: var(--text); font-size: 12px; font-weight: 600;
+}
 .chev { flex: none; width: 16px; height: 16px; color: var(--faint); margin-right: 14px; }
 
 /* Réglages, façon app Réglages */

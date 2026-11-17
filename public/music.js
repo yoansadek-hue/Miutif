@@ -27,6 +27,17 @@ export async function searchArtists(term, country = "fr") {
   }));
 }
 
+const simplify = (s) => String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+
+/**
+ * Nom de l'artiste suivi si cette sortie est un featuring pour lui (il n'en est pas l'artiste principal),
+ * sinon null. « SCH & SDM » n'est pas un feat pour SDM : il fait partie des artistes principaux.
+ */
+export function featOf(release, followedName) {
+  if (!followedName || release.featured === false) return null;
+  return simplify(release.artist).includes(simplify(followedName)) ? null : followedName;
+}
+
 function toRelease(c, followedId) {
   const name = c.collectionName || "";
   const kind = / - Single$/.test(name) ? "Single" : / - EP$/.test(name) ? "EP" : "Album";
@@ -35,6 +46,7 @@ function toRelease(c, followedId) {
     title: name.replace(/ - (Single|EP)$/, ""),
     artist: c.artistName,
     artistId: followedId, // l'artiste suivi qui a amené cette sortie
+    featured: c.artistId != null && followedId != null && String(c.artistId) !== String(followedId), // il n'en est pas l'artiste principal
     kind,
     date: c.releaseDate, // ISO, ex. 2026-11-14T08:00:00Z
     url: c.collectionViewUrl.replace(/\?uo=\d+$/, ""),

@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { createECDH, randomBytes } from "node:crypto";
 import worker from "../src/worker.js";
 import { b64url } from "../src/push.js";
-import { searchArtists, recentReleases, discography } from "../public/music.js";
+import { searchArtists, recentReleases, discography, featOf } from "../public/music.js";
 
 const ece = createRequire(import.meta.url)("http_ece");
 let failed = 0;
@@ -104,6 +104,10 @@ check(found[0]?.id === "111" && found[0].genre === "Rap", "recherche d'artiste")
 const rel = await recentReleases(["111", "222"]);
 check(JSON.stringify(rel.map((x) => x.id)) === JSON.stringify(["1", "4"]), "sorties : récentes uniquement, sans futur ni > 30 jours, sans doublon de fiche");
 check(rel[0].kind === "Single" && rel[0].title === "Neuf" && rel[0].artistId === "111", "sorties : « - Single » reconnu, artiste suivi noté");
+check(featOf({ artist: "Future", featured: true }, "Drake") === "Drake", "feat : Drake sur un titre de Future → « feat. Drake »");
+check(featOf({ artist: "SCH & SDM", featured: true }, "SDM") === null, "feat : SDM dans « SCH & SDM » est artiste principal, pas un feat");
+check(featOf({ artist: "Artiste A", featured: false }, "Artiste A") === null, "feat : sa propre sortie n'est pas un feat");
+check(rel[0].featured === false, "sorties : sortie de l'artiste lui-même marquée comme non-feat");
 
 const disco = await discography("111");
 check(JSON.stringify(disco.map((r) => r.id)) === JSON.stringify(["1", "2"]), "discographie : ses sorties parues (sans doublon, sans le futur, sans les autres artistes), la plus récente d'abord");

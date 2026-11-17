@@ -9,7 +9,7 @@
 // Les pages music.apple.com (playlists, fiches artistes), elles, restent lisibles d'ici.
 
 import { generateVapidKeys, sendPush, b64url } from "./push.js";
-import { filterRecent, playlistUrl, parsePlaylistPage, parseArtistPage } from "../public/music.js";
+import { filterRecent, playlistUrl, parsePlaylistPage, parseArtistPage, featOf } from "../public/music.js";
 
 const NOTIFY_HOUR = 11;            // heure locale des notifications
 const PLAYLIST_HOUR = 10;          // relecture des playlists avant le passage du robot
@@ -202,7 +202,8 @@ async function notifyUser(env, key, user, data, keys, now, day) {
   const fresh = releasesFor(user, data, { days: NEW_DAYS, now: now.getTime() }).filter((r) => !notified[r.id]);
 
   if (fresh.length) {
-    const status = await sendPush(user.sub, recapPayload(fresh, day), keys);
+    const names = Object.fromEntries((user.artists || []).map((a) => [a.id, a.name]));
+    const status = await sendPush(user.sub, recapPayload(fresh, day, names), keys);
     if (status === 404 || status === 410) delete user.sub; // notifications coupées sur le téléphone
   }
 
@@ -214,13 +215,15 @@ async function notifyUser(env, key, user, data, keys, now, day) {
 }
 
 /** Une seule notification. 1 sortie : elle s'ouvre dans Apple Music. Plusieurs : l'onglet Nouveautés. */
-function recapPayload(fresh, day) {
+function recapPayload(fresh, day, names = {}) {
+  const feat = (r) => featOf(r, names[r.artistId]);
   if (fresh.length === 1) {
     const r = fresh[0];
+    if (feat(r)) return { title: `${feat(r)} en featuring`, body: `${r.title} de ${r.artist} · touche pour écouter`, url: r.url, tag: `recap-${day}` };
     const what = r.kind === "Album" ? "Nouvel album" : r.kind === "EP" ? "Nouvel EP" : "Nouveau single";
     return { title: `${what} de ${r.artist}`, body: `${r.title} · touche pour écouter`, url: r.url, tag: `recap-${day}` };
   }
-  const lines = fresh.slice(0, 4).map((r) => `${r.artist} — ${r.title}`);
+  const lines = fresh.slice(0, 4).map((r) => `${r.artist} — ${r.title}${feat(r) ? ` (feat. ${feat(r)})` : ""}`);
   if (fresh.length > 4) lines.push(`et ${fresh.length - 4} autre${fresh.length - 4 > 1 ? "s" : ""}`);
   return { title: `${fresh.length} nouvelles sorties`, body: lines.join("\n"), url: "/?tab=new", tag: `recap-${day}` };
 }
