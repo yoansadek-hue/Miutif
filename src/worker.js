@@ -1,16 +1,26 @@
 // Serveur de Miutif (Cloudflare Worker).
 // - sert l'appli (dossier public/)
-// - garde pour chaque téléphone : ses artistes + son abonnement aux notifications (KV « DB »)
-// - chaque heure, un réveil (cron) envoie les notifs aux téléphones pour qui il est 11 h
-// Apple bloque les serveurs Cloudflare : les sorties sont récupérées par un robot GitHub
+// - garde pour chaque téléphone : ses artistes, ses playlists et son abonnement aux notifications (KV « DB »)
+// - chaque heure, un réveil (cron) :
+//     · à 10 h (heure locale) relit les playlists, pour que le robot GitHub voie les nouveaux artistes
+//     · à 11 h envoie UNE notification récap des nouvelles sorties
+// Apple bloque l'API iTunes depuis Cloudflare : les sorties sont récupérées par un robot GitHub
 // (scripts/fetch-releases.mjs) qui les publie dans un fichier JSON (env.DATA_URL) lu ici.
+// Les pages music.apple.com (playlists, fiches artistes), elles, restent lisibles d'ici.
 
 import { generateVapidKeys, sendPush, b64url } from "./push.js";
-import { filterRecent, playlistUrl, parsePlaylistPage } from "../public/music.js";
+import { filterRecent, playlistUrl, parsePlaylistPage, parseArtistPage } from "../public/music.js";
 
-const NOTIFY_HOUR = 11;   // heure locale des notifications
-const NEW_DAYS = 7;       // une sortie est « nouvelle » pendant 7 jours
-const MAX_SINGLE = 6;     // au-delà, une notif résumé pour le reste
+const NOTIFY_HOUR = 11;            // heure locale des notifications
+const PLAYLIST_HOUR = 10;          // relecture des playlists avant le passage du robot
+const NEW_DAYS = 7;                // une sortie est « nouvelle » pendant 7 jours
+const ARTIST_TTL = 14 * 86400;     // fiche artiste gardée 14 jours
+const MAX_PLAYLISTS = 30;
+
+const APPLE_HEADERS = {
+  "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
+  "Accept-Language": "fr-FR,fr;q=0.9",
+};
 
 export default {
   async fetch(request, env) {
@@ -24,18 +34,26 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(dailyRun(env, new Date(event.scheduledTime)));
+    ctx.waitUntil(hourlyRun(env, new Date(event.scheduledTime)));
   },
 };
 
 // ---------- API ----------
 
 async function api(request, url, env) {
-  const route = `${request.method} ${url.pathname}`;
   const body = request.method === "POST" ? await request.json().catch(() => ({})) : {};
   const country = (body.country || url.searchParams.get("country") || request.cf?.country || "fr").toLowerCase().slice(0, 2);
 
-  switch (route) {
+  // Fiche artiste (photo + bio) et photo seule (pour la liste)
+  const artist = request.method === "GET" && url.pathname.match(/^\/api\/artist\/(\d{1,15})(\/photo)?$/);
+  if (artist) {
+    const info = await artistInfo(env, artist[1], country);
+    if (!artist[2]) return json(info, 200, "public, max-age=86400");
+    if (!info.image) return new Response(null, { status: 404, headers: { "Cache-Control": "public, max-age=86400" } });
+    return new Response(null, { status: 302, headers: { Location: info.image, "Cache-Control": "public, max-age=1209600" } });
+  }
+
+  switch (`${request.method} ${url.pathname}`) {
     case "GET /api/config":
       return json({
         vapidKey: (await vapid(env)).publicKey,
@@ -52,13 +70,7 @@ async function api(request, url, env) {
     case "POST /api/playlist": {
       const target = playlistUrl(body.url);
       if (!target) return json({ error: "Ce n'est pas un lien de playlist Apple Music" }, 400);
-      const res = await fetch(target, {
-        headers: {
-          "User-Agent": "Mozilla/5.0 (iPhone; CPU iPhone OS 18_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/18.0 Mobile/15E148 Safari/604.1",
-          "Accept-Language": "fr-FR,fr;q=0.9",
-        },
-        redirect: "follow",
-      });
+      const res = await fetch(target, { headers: APPLE_HEADERS });
       if (res.status === 404) return json({ error: "Playlist introuvable : vérifie qu'elle est bien partagée" }, 404);
       if (!res.ok) return json({ error: `Apple Music ne répond pas (${res.status})` }, 502);
       const parsed = parsePlaylistPage(await res.text());
@@ -79,7 +91,12 @@ async function api(request, url, env) {
     case "GET /api/user": {
       const id = cleanUserId(url.searchParams.get("id"));
       const user = id && (await env.DB.get(`u:${id}`, "json"));
-      return json({ artists: user?.artists || [], subscribed: !!user?.sub });
+      return json({
+        artists: user?.artists || [],
+        playlists: user?.playlists || [],
+        excluded: user?.excluded || [],
+        subscribed: !!user?.sub,
+      });
     }
 
     case "POST /api/sync": {
@@ -87,6 +104,8 @@ async function api(request, url, env) {
       if (!id) return json({ error: "id invalide" }, 400);
       const user = (await env.DB.get(`u:${id}`, "json")) || { notified: {}, created: Date.now() };
       if (Array.isArray(body.artists)) user.artists = cleanArtists(body.artists);
+      if (Array.isArray(body.playlists)) user.playlists = cleanPlaylists(body.playlists);
+      if (Array.isArray(body.excluded)) user.excluded = cleanIdList(body.excluded);
       if (body.subscription === null) delete user.sub;
       else if (validSub(body.subscription)) user.sub = pickSub(body.subscription);
       if (typeof body.tz === "string" && body.tz.length < 64) user.tz = body.tz;
@@ -103,11 +122,12 @@ async function api(request, url, env) {
       user.lastTest = Date.now();
       await env.DB.put(`u:${id}`, JSON.stringify(user));
 
-      const data = await releaseData(env).catch(() => ({})); // robot pas encore passé : message générique
-      const [latest] = releasesFor(user, data, { days: 30, now: Date.now() });
-      const payload = latest
-        ? { ...releasePayload(latest), title: `Test · ${releasePayload(latest).title}` }
-        : { title: "Miutif", body: "Les notifications marchent ! Rendez-vous à 11 h.", url: "/" };
+      // Même notification que celle de 11 h, avec les sorties de la semaine
+      const data = await releaseData(env).catch(() => ({}));
+      const week = releasesFor(user, data, { days: NEW_DAYS, now: Date.now() });
+      const payload = week.length
+        ? { ...recapPayload(week, "test"), title: `Test · ${recapPayload(week, "test").title}` }
+        : { title: "Miutif", body: "Les notifications marchent ! Rendez-vous à 11 h.", url: "/", tag: "test" };
       const status = await sendPush(user.sub, payload, await vapid(env));
       return json({ ok: status < 300, status });
     }
@@ -115,7 +135,19 @@ async function api(request, url, env) {
   return json({ error: "Introuvable" }, 404);
 }
 
-// ---------- Envoi quotidien de 11 h ----------
+// ---------- Fiches artistes ----------
+
+async function artistInfo(env, id, country) {
+  const cached = await env.DB.get(`a:${id}`, "json");
+  if (cached) return cached;
+  const res = await fetch(`https://music.apple.com/${country}/artist/x/${id}`, { headers: APPLE_HEADERS });
+  if (!res.ok && res.status !== 404) throw new Error(`Apple Music ne répond pas (${res.status})`);
+  const info = { id, ...(res.ok ? parseArtistPage(await res.text()) : { name: "", image: null, bio: "" }) };
+  await env.DB.put(`a:${id}`, JSON.stringify(info), { expirationTtl: ARTIST_TTL });
+  return info;
+}
+
+// ---------- Réveil horaire ----------
 
 async function forEachUser(env, fn) {
   let cursor;
@@ -131,7 +163,7 @@ async function forEachUser(env, fn) {
 
 /** Sorties publiées par le robot GitHub : { updated, byCountry: { fr: [...] } } */
 async function releaseData(env) {
-  const res = await fetch(`${env.DATA_URL}?t=${Math.floor(Date.now() / 300000)}`);
+  const res = await fetch(`${env.DATA_URL}?t=${Math.floor(Date.now() / 60000)}`);
   if (!res.ok) throw new Error(`Fichier des sorties introuvable (${res.status})`);
   return res.json();
 }
@@ -142,41 +174,51 @@ function releasesFor(user, data, { days, now }) {
   return filterRecent(list.filter((r) => mine.has(r.artistId)), { days, now });
 }
 
-async function dailyRun(env, now) {
+async function hourlyRun(env, now) {
   const keys = await vapid(env);
   let data = null;
   await forEachUser(env, async (key, user) => {
     try {
-      if (!user.sub || !user.artists?.length) return;
       const { hour, day } = localTime(now, user.tz || "Europe/Paris");
-      if (hour !== NOTIFY_HOUR || user.lastRun === day) return;
-      data ||= await releaseData(env); // lu une seule fois, et seulement s'il y a quelqu'un à notifier
-      await notifyUser(env, key, user, data, keys, now, day);
+      if (hour === PLAYLIST_HOUR && user.playlists?.length && user.playlistDay !== day) {
+        await refreshPlaylists(env, key, user, day);
+      }
+      if (hour === NOTIFY_HOUR && user.sub && user.artists?.length && user.lastRun !== day) {
+        data ||= await releaseData(env); // lu une seule fois, et seulement s'il y a quelqu'un à notifier
+        await notifyUser(env, key, user, data, keys, now, day);
+      }
     } catch (e) {
-      console.error(`Envoi raté pour ${key} :`, e.message);
+      console.error(`Réveil raté pour ${key} :`, e.message);
     }
   });
 }
 
-async function notifyUser(env, key, user, data, keys, now, day) {
-  const releases = releasesFor(user, data, { days: NEW_DAYS, now: now.getTime() });
-  const notified = user.notified || {};
-  const fresh = releases.filter((r) => !notified[r.id]);
-
-  const payloads = fresh.slice(0, MAX_SINGLE).map(releasePayload);
-  if (fresh.length > MAX_SINGLE) {
-    const rest = fresh.slice(MAX_SINGLE);
-    payloads.push({
-      title: `+ ${rest.length} autre${rest.length > 1 ? "s" : ""} sortie${rest.length > 1 ? "s" : ""}`,
-      body: rest.map((r) => r.artist).slice(0, 5).join(", "),
-      url: "/",
-      tag: `summary-${day}`,
-    });
+/** Ajoute les artistes apparus dans les playlists (sauf ceux que l'utilisateur a retirés). */
+async function refreshPlaylists(env, key, user, day) {
+  const known = new Set((user.artists || []).map((a) => a.id));
+  const excluded = new Set(user.excluded || []);
+  for (const p of user.playlists) {
+    try {
+      const res = await fetch(p.url, { headers: APPLE_HEADERS });
+      const parsed = res.ok && parsePlaylistPage(await res.text());
+      if (!parsed) continue;
+      p.count = parsed.artists.length;
+      for (const a of parsed.artists) {
+        if (!known.has(a.id) && !excluded.has(a.id)) { known.add(a.id); user.artists.push(a); }
+      }
+    } catch {}
   }
+  user.playlistDay = day;
+  await env.DB.put(key, JSON.stringify(user));
+}
 
-  for (const payload of payloads) {
-    const status = await sendPush(user.sub, payload, keys);
-    if (status === 404 || status === 410) { delete user.sub; break; } // notifications coupées sur le téléphone
+async function notifyUser(env, key, user, data, keys, now, day) {
+  const notified = user.notified || {};
+  const fresh = releasesFor(user, data, { days: NEW_DAYS, now: now.getTime() }).filter((r) => !notified[r.id]);
+
+  if (fresh.length) {
+    const status = await sendPush(user.sub, recapPayload(fresh, day), keys);
+    if (status === 404 || status === 410) delete user.sub; // notifications coupées sur le téléphone
   }
 
   for (const r of fresh) notified[r.id] = now.getTime();
@@ -186,14 +228,16 @@ async function notifyUser(env, key, user, data, keys, now, day) {
   await env.DB.put(key, JSON.stringify(user));
 }
 
-function releasePayload(r) {
-  const what = r.kind === "Album" ? "Nouvel album" : r.kind === "EP" ? "Nouvel EP" : "Nouveau single";
-  return {
-    title: `${what} de ${r.artist}`,
-    body: `« ${r.title} » est dispo sur Apple Music. Touche pour écouter.`,
-    url: r.url,
-    tag: `release-${r.id}`,
-  };
+/** Une seule notification. 1 sortie : elle s'ouvre dans Apple Music. Plusieurs : l'onglet Nouveautés. */
+function recapPayload(fresh, day) {
+  if (fresh.length === 1) {
+    const r = fresh[0];
+    const what = r.kind === "Album" ? "Nouvel album" : r.kind === "EP" ? "Nouvel EP" : "Nouveau single";
+    return { title: `${what} de ${r.artist}`, body: `${r.title} · touche pour écouter`, url: r.url, tag: `recap-${day}` };
+  }
+  const lines = fresh.slice(0, 4).map((r) => `${r.artist} — ${r.title}`);
+  if (fresh.length > 4) lines.push(`et ${fresh.length - 4} autre${fresh.length - 4 > 1 ? "s" : ""}`);
+  return { title: `${fresh.length} nouvelles sorties`, body: lines.join("\n"), url: "/?tab=new", tag: `recap-${day}` };
 }
 
 function localTime(date, timeZone) {
@@ -236,18 +280,26 @@ async function developerToken(env) {
 // ---------- Validation ----------
 
 const cleanUserId = (v) => (typeof v === "string" && /^[a-z0-9]{16,40}$/.test(v) ? v : null);
+const cleanIdList = (list) => [...new Set(list.map(String).filter((x) => /^\d{1,15}$/.test(x)))].slice(0, 5000);
 const cleanArtists = (list) => {
   const seen = new Set();
   return list
     .filter((a) => a && /^\d{1,15}$/.test(String(a.id)) && !seen.has(String(a.id)) && seen.add(String(a.id)))
-    .slice(0, 2000)
+    .slice(0, 3000)
     .map((a) => ({ id: String(a.id), name: String(a.name || "").slice(0, 100) }));
+};
+const cleanPlaylists = (list) => {
+  const seen = new Set();
+  return list
+    .map((p) => ({ url: playlistUrl(p?.url), title: String(p?.title || "Playlist").slice(0, 120), count: Number(p?.count) || 0 }))
+    .filter((p) => p.url && !seen.has(p.url) && seen.add(p.url))
+    .slice(0, MAX_PLAYLISTS);
 };
 const validSub = (s) => s && typeof s.endpoint === "string" && s.endpoint.startsWith("https://")
   && s.keys && typeof s.keys.p256dh === "string" && typeof s.keys.auth === "string";
 const pickSub = (s) => ({ endpoint: s.endpoint, keys: { p256dh: s.keys.p256dh, auth: s.keys.auth } });
 
-const json = (data, status = 200) => new Response(JSON.stringify(data), {
+const json = (data, status = 200, cache = "no-store") => new Response(JSON.stringify(data), {
   status,
-  headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": "no-store" },
+  headers: { "Content-Type": "application/json; charset=utf-8", "Cache-Control": cache },
 });

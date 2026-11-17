@@ -1,11 +1,16 @@
-# Chaque heure : récupère chez Apple les sorties des artistes suivis et les publie
+# Récupère chez Apple les sorties des artistes suivis et les publie
 # sur la branche « data » (fichier releases.json), lue par le serveur pour les notifs de 11 h.
 # (Apple bloque les serveurs Cloudflare, d'où ce relais par GitHub.)
 name: Sorties
 
 on:
   schedule:
-    - cron: "17 * * * *"
+    # Passage principal à 10 h 50 (heure de Paris) pour que la notif de 11 h parte à l'heure :
+    # 09:50 UTC en hiver, 08:50 UTC en été. GitHub peut retarder ses tâches planifiées de
+    # quelques minutes, d'où les passages de secours à 10 h 20 et 10 h 35, plus un passage toutes les heures.
+    - cron: "50 8,9 * * *"
+    - cron: "20,35 8,9 * * *"
+    - cron: "5 * * * *"
   workflow_dispatch:
   push:
     branches: [main]

@@ -7,8 +7,8 @@ self.addEventListener("push", (e) => {
   try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data ? e.data.text() : "" }; }
   e.waitUntil(self.registration.showNotification(d.title || "Miutif", {
     body: d.body || "",
-    icon: "/icons/icon-192.png",
-    badge: "/icons/icon-192.png",
+    icon: "/icons/icon-192.png?v=2",
+    badge: "/icons/icon-192.png?v=2",
     tag: d.tag || undefined,
     data: { url: d.url || "/" },
   }));
@@ -22,7 +22,7 @@ const ask = (client, url) => new Promise((ok) => {
   try { client.postMessage({ type: "open", url }, [ch.port2]); } catch { clearTimeout(t); ok(false); }
 });
 
-// Appui sur une notif : on ouvre Miutif qui bascule aussitôt vers Apple Music.
+// Appui sur la notif : une sortie s'ouvre dans Apple Music ; le récap ouvre l'onglet Nouveautés.
 self.addEventListener("notificationclick", (e) => {
   e.notification.close();
   const target = (e.notification.data && e.notification.data.url) || "/";
@@ -32,8 +32,8 @@ self.addEventListener("notificationclick", (e) => {
     const client = all.find((c) => c.focused) || all[0];
     if (client) {
       try { await client.focus(); } catch {}
-      if (!isMusic || (await ask(client, target))) return;
+      if (await ask(client, target)) return;
     }
-    return self.clients.openWindow(isMusic ? `/?open=${encodeURIComponent(target)}` : "/");
+    return self.clients.openWindow(isMusic ? `/?open=${encodeURIComponent(target)}` : target);
   })());
 });

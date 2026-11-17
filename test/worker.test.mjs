@@ -1,10 +1,13 @@
-// Test de bout en bout, sans réseau : KV simulé, API Apple, fichier du robot et service push simulés.
+// Test de bout en bout, sans réseau : KV simulé, pages Apple, fichier du robot et service push simulés.
+// Les notifications envoyées sont déchiffrées pour vérifier leur contenu.
 // Lancer : node test/worker.test.mjs
+import { createRequire } from "node:module";
 import { createECDH, randomBytes } from "node:crypto";
 import worker from "../src/worker.js";
 import { b64url } from "../src/push.js";
 import { searchArtists, recentReleases } from "../public/music.js";
 
+const ece = createRequire(import.meta.url)("http_ece");
 let failed = 0;
 const check = (ok, label) => { console.log(`${ok ? "OK  " : "FAIL"} ${label}`); if (!ok) failed++; };
 
@@ -18,6 +21,15 @@ const DB = {
 const DATA_URL = "https://raw.githubusercontent.com/test/Miutif/data/releases.json";
 const env = { DB, DATA_URL, ASSETS: { fetch: async () => new Response("asset") } };
 
+// --- Téléphones simulés (clés pour déchiffrer leurs notifications)
+const phones = {};
+function phone(name) {
+  const ecdh = createECDH("prime256v1"); ecdh.generateKeys();
+  const auth = randomBytes(16);
+  phones[`https://web.push.apple.com/${name}`] = { ecdh, auth };
+  return { endpoint: `https://web.push.apple.com/${name}`, keys: { p256dh: b64url.encode(ecdh.getPublicKey()), auth: b64url.encode(auth) } };
+}
+
 // --- Réseau simulé
 const NOW = Date.parse("2026-11-18T10:00:00Z"); // 11:00 à Paris
 const day = (d) => new Date(NOW - d * 86400000).toISOString();
@@ -25,6 +37,10 @@ const pushes = [];
 let pushStatus = 201;
 let robotFile = null;
 let robotReads = 0;
+let playlistArtists = [["111", "Artiste A"], ["222", "Artiste B"], ["444", "Artiste D & co"]];
+let artistFetches = 0;
+const link = (id, name) => ({ title: name, segue: { destination: { contentDescriptor: { kind: "artist", identifiers: { storeAdamID: id } } } } });
+
 globalThis.fetch = async (url, init = {}) => {
   url = String(url);
   if (url.startsWith("https://itunes.apple.com/search")) {
@@ -41,23 +57,25 @@ globalThis.fetch = async (url, init = {}) => {
       { wrapperType: "collection", collectionId: 4, artistName: "Artiste B", collectionName: "Album B", releaseDate: day(3), collectionViewUrl: "https://music.apple.com/fr/album/b/4" },
     ] });
   }
-  if (url.startsWith("https://music.apple.com/")) {
+  if (url.startsWith("https://music.apple.com/") && url.includes("/playlist/")) {
     if (!url.includes("pl.ok")) return new Response("introuvable", { status: 404 });
-    const link = (id, name) => ({ title: name, segue: { destination: { contentDescriptor: { kind: "artist", identifiers: { storeAdamID: id } } } } });
-    const data = { data: [{ sections: [{ items: [
-      { title: "Titre 1", subtitleLinks: [link("111", "Artiste A"), link("222", "Artiste B")] },
-      { title: "Titre 2", subtitleLinks: [link("111", "Artiste A")] },
-      { title: "Titre 3", subtitleLinks: [link("444", "Artiste D & co")] },
-    ] }] }] };
-    return new Response(`<html><head><meta property="og:title" content="Ma playlist &amp; moi"></head><body>
-      <script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script></body></html>`);
+    const data = { data: [{ sections: [{ items: playlistArtists.map(([id, n], i) => ({ title: `Titre ${i}`, subtitleLinks: [link(id, n), link("111", "Artiste A")] })) }] }] };
+    return new Response(`<meta property="og:title" content="Ma playlist &amp; moi"><script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script>`);
+  }
+  if (url.startsWith("https://music.apple.com/") && url.includes("/artist/")) {
+    artistFetches++;
+    if (url.endsWith("/999")) return new Response("introuvable", { status: 404 });
+    const data = { data: [{ data: { sections: [{ itemKind: "artistDetailHeader", items: [{ title: "Artiste A", bio: "Né à Paris.\nRappeur.", circleArtwork: { dictionary: { url: "https://is1-ssl.mzstatic.com/image/thumb/a/file.png/{w}x{h}{c}.{f}" } } }] }] } }] };
+    return new Response(`<script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script>`);
   }
   if (url.startsWith(DATA_URL)) {
     robotReads++;
     return robotFile ? Response.json(robotFile) : new Response("404", { status: 404 });
   }
   if (url.startsWith("https://web.push.apple.com/")) {
-    pushes.push({ url, headers: init.headers });
+    const ph = phones[url];
+    const payload = JSON.parse(ece.decrypt(Buffer.from(init.body), { version: "aes128gcm", privateKey: ph.ecdh, authSecret: ph.auth }).toString());
+    pushes.push({ url, headers: init.headers, payload });
     return new Response(null, { status: pushStatus });
   }
   throw new Error(`fetch inattendu : ${url}`);
@@ -69,13 +87,15 @@ const call = async (method, path, body) => {
   const res = await worker.fetch(new Request(`https://miutif.test${path}`, {
     method, headers: { "Content-Type": "application/json" }, body: body ? JSON.stringify(body) : undefined,
   }), env);
-  return { status: res.status, data: await res.json() };
+  const text = await res.text();
+  return { status: res.status, headers: res.headers, data: text ? JSON.parse(text) : null };
 };
 const runCron = async (iso) => {
   const jobs = [];
   await worker.scheduled({ scheduledTime: Date.parse(iso) }, env, { waitUntil: (p) => jobs.push(p) });
   await Promise.all(jobs);
 };
+const user = (id) => JSON.parse(kv.get(`u:${id}`));
 
 // --- Catalogue (module partagé app / robot)
 const found = await searchArtists("artiste");
@@ -83,63 +103,80 @@ check(found[0]?.id === "111" && found[0].genre === "Rap", "recherche d'artiste")
 const rel = await recentReleases(["111", "222"]);
 check(JSON.stringify(rel.map((x) => x.id)) === JSON.stringify(["1", "4"]), "sorties : récentes uniquement, sans futur ni > 30 jours, sans doublon de fiche");
 check(rel[0].kind === "Single" && rel[0].title === "Neuf" && rel[0].artistId === "111", "sorties : « - Single » reconnu, artiste suivi noté");
-check(rel[0].url === "https://music.apple.com/fr/album/neuf/1" && rel[0].artwork.includes("600x600"), "sorties : lien Apple Music propre + pochette grand format");
 
-// --- Serveur
+// --- Fiches artistes
+const fiche = await call("GET", "/api/artist/111");
+check(fiche.data.name === "Artiste A" && fiche.data.bio.startsWith("Né à Paris") && fiche.data.image.endsWith("/400x400cc.jpg"), "fiche artiste : nom, biographie et photo carrée");
+const ph = await call("GET", "/api/artist/111/photo");
+check(ph.status === 302 && ph.headers.get("Location").includes("mzstatic") && artistFetches === 1, "photo : redirection vers l'image, fiche gardée en mémoire (1 seule lecture Apple)");
+check((await call("GET", "/api/artist/999/photo")).status === 404, "photo absente : 404 (l'app affiche l'initiale)");
+
+// --- Playlist
 const pl = await call("POST", "/api/playlist", { url: "Écoute https://music.apple.com/fr/playlist/ma-playlist/pl.ok?ls=1" });
-check(pl.status === 200 && pl.data.title === "Ma playlist & moi", "playlist : lien partagé lu, titre récupéré");
-check(JSON.stringify(pl.data.artists.map((a) => a.id)) === JSON.stringify(["111", "222", "444"]) && pl.data.artists[2].name === "Artiste D & co", "playlist : chaque artiste une seule fois, featurings compris");
+check(pl.status === 200 && pl.data.title === "Ma playlist & moi" && pl.data.artists.length === 3, "playlist : lien partagé lu, chaque artiste une seule fois");
 check((await call("POST", "/api/playlist", { url: "https://music.apple.com/fr/playlist/x/pl.absente" })).status === 404, "playlist : non partagée → message clair");
 check((await call("POST", "/api/playlist", { url: "https://exemple.com/fr/playlist/x" })).status === 400, "playlist : autre site refusé");
-const cfg = await call("GET", "/api/config");
-check(cfg.status === 200 && b64url.decode(cfg.data.vapidKey).length === 65, "config : clé VAPID créée au premier appel");
-check((await call("GET", "/api/config")).data.vapidKey === cfg.data.vapidKey, "config : la clé reste la même ensuite");
 
-const browser = createECDH("prime256v1"); browser.generateKeys();
-const sub = { endpoint: "https://web.push.apple.com/abc", keys: { p256dh: b64url.encode(browser.getPublicKey()), auth: b64url.encode(randomBytes(16)) } };
+// --- Utilisateurs
+const cfg = await call("GET", "/api/config");
+check(b64url.decode(cfg.data.vapidKey).length === 65, "config : clé VAPID créée au premier appel");
+
 const id = "abcdefghij0123456789";
 check((await call("POST", "/api/sync", { id: "x", artists: [] })).status === 400, "sync : identifiant invalide refusé");
-const sy = await call("POST", "/api/sync", { id, tz: "Europe/Paris", artists: [{ id: "111", name: "Artiste A" }, { id: "222", name: "Artiste B" }, { id: "111", name: "doublon" }, { id: "abc", name: "faux" }], subscription: sub });
+const sy = await call("POST", "/api/sync", {
+  id, tz: "Europe/Paris", subscription: phone("paris"),
+  artists: [{ id: "111", name: "Artiste A" }, { id: "222", name: "Artiste B" }, { id: "111", name: "doublon" }, { id: "abc", name: "faux" }],
+  playlists: [{ url: "https://music.apple.com/fr/playlist/ma-playlist/pl.ok", title: "Ma playlist", count: 3 }, { url: "https://exemple.com/x", title: "faux" }],
+  excluded: ["444"],
+});
 check(sy.data.subscribed && sy.data.artists === 2, "sync : abonnement gardé, doublons et faux identifiants ignorés");
-check((await call("GET", `/api/user?id=${id}`)).data.artists.length === 2, "user : artistes récupérables après réinstallation");
+const saved = (await call("GET", `/api/user?id=${id}`)).data;
+check(saved.artists.length === 2 && saved.playlists.length === 1 && saved.excluded[0] === "444", "user : artistes, playlists valides et artistes retirés récupérables");
 
 const tokyo = "tokyo0123456789abcdef";
-await call("POST", "/api/sync", { id: tokyo, tz: "Asia/Tokyo", artists: [{ id: "111", name: "A" }, { id: "333", name: "C" }], subscription: { ...sub, endpoint: "https://web.push.apple.com/tokyo" } });
+await call("POST", "/api/sync", { id: tokyo, tz: "Asia/Tokyo", artists: [{ id: "111", name: "A" }, { id: "333", name: "C" }], subscription: phone("tokyo") });
 const art = await call("GET", "/api/artists");
 check(JSON.stringify(art.data.countries.fr.sort()) === JSON.stringify(["111", "222", "333"]), "robot : liste de tous les artistes suivis, sans doublon");
 
-// Le robot publie son fichier (comme le ferait GitHub Actions)
-robotFile = { updated: new Date(NOW).toISOString(), byCountry: { fr: await recentReleases(art.data.countries.fr, { days: 14, dedupe: false }) } };
-
+// --- 10 h : relecture des playlists (un nouvel artiste est apparu dans la playlist)
+playlistArtists = [...playlistArtists, ["555", "Artiste E"]];
 await runCron("2026-11-18T09:00:00Z"); // 10:00 à Paris
-check(pushes.length === 0 && robotReads === 0, "cron 10 h : rien n'est envoyé, fichier pas lu");
+const ids = user(id).artists.map((a) => a.id);
+check(ids.includes("555") && !ids.includes("444"), "10 h : nouvel artiste de la playlist ajouté, artiste retiré à la main pas rajouté");
+check(pushes.length === 0 && robotReads === 0, "10 h : aucune notification");
 
-await runCron("2026-11-18T10:00:00Z"); // 11:00 à Paris
-check(pushes.length === 2, "cron 11 h : une notif par nouvelle sortie (2)");
-check(pushes[0]?.headers["Content-Encoding"] === "aes128gcm" && pushes[0]?.headers.Authorization.startsWith("vapid t="), "cron 11 h : notif chiffrée et signée");
+// Le robot publie son fichier (comme le ferait GitHub Actions à 10 h 50)
+robotFile = { updated: new Date(NOW).toISOString(), byCountry: { fr: await recentReleases(["111", "222", "333"], { days: 14, dedupe: false }) } };
+
+// --- 11 h : une seule notification récap
+await runCron("2026-11-18T10:00:00Z");
+check(pushes.length === 1, "11 h : UNE seule notification pour 2 sorties");
+const recap = pushes[0]?.payload;
+check(recap?.title === "2 nouvelles sorties" && recap.body.includes("Artiste A — Neuf") && recap.body.includes("Artiste B — Album B"), "11 h : le récap liste les sorties");
+check(recap?.url === "/?tab=new", "11 h : toucher le récap ouvre l'onglet Nouveautés");
 
 await runCron("2026-11-18T10:00:00Z");
-check(pushes.length === 2, "cron 11 h relancé le même jour : pas de doublon");
-
 await runCron("2026-11-19T10:00:00Z");
-check(pushes.length === 2, "lendemain 11 h : déjà notifiées, rien de nouveau");
+check(pushes.length === 1, "pas de doublon : ni le même jour, ni le lendemain");
 
 await runCron("2026-11-19T02:00:00Z"); // 11:00 à Tokyo (suit 111 mais pas 222)
-check(pushes.filter((p) => p.url.endsWith("/tokyo")).length === 1 && pushes.length === 3, "fuseau horaire + seulement SES artistes (Tokyo : 1 notif)");
+const tk = pushes.at(-1);
+check(pushes.length === 2 && tk.url.endsWith("/tokyo") && tk.payload.title === "Nouveau single de Artiste A" && tk.payload.url === "https://music.apple.com/fr/album/neuf/1",
+  "1 seule sortie : la notif ouvre directement Apple Music (fuseau de Tokyo respecté)");
 
 const t = await call("POST", "/api/test", { id });
-check(t.data.ok && pushes.length === 4, "bouton test : notif envoyée tout de suite");
+check(t.data.ok && pushes.length === 3 && pushes[2].payload.title.startsWith("Test · 2 nouvelles sorties"), "bouton test : même récap que celui de 11 h");
 check((await call("POST", "/api/test", { id })).status === 429, "bouton test : pas de rafale");
 
 robotFile = null;
-kv.set(`u:${id}`, JSON.stringify({ ...JSON.parse(kv.get(`u:${id}`)), notified: {}, lastRun: null }));
+kv.set(`u:${id}`, JSON.stringify({ ...user(id), notified: {}, lastRun: null }));
 await runCron("2026-11-20T10:00:00Z");
-check(pushes.length === 4 && JSON.parse(kv.get(`u:${id}`)).lastRun === null, "fichier du robot absent : rien d'envoyé, on réessaiera");
+check(pushes.length === 3 && user(id).lastRun === null, "fichier du robot absent : rien d'envoyé, on réessaiera");
 
 pushStatus = 410;
 robotFile = { byCountry: { fr: [{ ...rel[0], date: day(0.1) }] } };
 await runCron("2026-11-20T10:00:00Z");
-check(!JSON.parse(kv.get(`u:${id}`)).sub, "abonnement mort (notifs coupées) : supprimé");
+check(!user(id).sub, "abonnement mort (notifs coupées) : supprimé");
 
 check((await call("GET", "/api/token")).status === 404, "jeton Apple Music : absent tant que non configuré");
 

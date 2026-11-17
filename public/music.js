@@ -96,6 +96,28 @@ export function parsePlaylistPage(html) {
   return { title, artists: [...artists.values()] };
 }
 
+/**
+ * Fiche d'un artiste depuis sa page music.apple.com : nom, photo (carrée) et biographie.
+ * La photo vient de l'en-tête de la page (ou, à défaut, de l'image de partage og:image).
+ */
+export function parseArtistPage(html) {
+  let header = null;
+  const m = html.match(/<script[^>]*id="serialized-server-data"[^>]*>([\s\S]*?)<\/script>/);
+  if (m) {
+    try {
+      const sections = JSON.parse(m[1])?.data?.[0]?.data?.sections || [];
+      header = sections.find((s) => s.itemKind === "artistDetailHeader")?.items?.[0] || null;
+    } catch {}
+  }
+  const template = header?.circleArtwork?.dictionary?.url || header?.artwork?.dictionary?.url;
+  const og = html.match(/<meta property="og:image" content="([^"]+)"/)?.[1];
+  const image = template
+    ? template.replace("{w}x{h}{c}.{f}", "400x400cc.jpg")
+    : og && /AMCArtistImages|\/Music\d*\//.test(og) ? og.replace(/\/[^/]+$/, "/400x400cc.jpg") : null;
+  const name = header?.title || (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "").replace(/ sur Apple Music$/, "");
+  return { name, image, bio: (header?.bio || "").trim() };
+}
+
 /** Sorties récentes des artistes donnés (une entrée par artiste suivi et par sortie si dedupe=false). */
 export async function recentReleases(artistIds, { country = "fr", days = 30, now = Date.now(), dedupe = true } = {}) {
   const found = new Map();
