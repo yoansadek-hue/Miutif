@@ -252,7 +252,17 @@ function tapTab(tab) {
   const sheetOpen = !$("#sheet").hidden;
   if (sheetOpen) closeSheet();
   if (tab === current) {
-    if (!sheetOpen) $(`#scroll-${tab}`).scrollTo({ top: 0, behavior: reduced() ? "auto" : "smooth" });
+    if (sheetOpen) return;
+    // en pleine recherche : l'onglet Artistes efface la recherche et ramène à la liste
+    const q = $("#q");
+    if (tab === "artists" && q.value.trim()) {
+      q.value = "";
+      q.blur();
+      updateSearchMode();
+      $("#scroll-artists").scrollTop = 0;
+      return;
+    }
+    $(`#scroll-${tab}`).scrollTo({ top: 0, behavior: reduced() ? "auto" : "smooth" });
     return;
   }
   showTab(tab);
