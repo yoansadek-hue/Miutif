@@ -226,16 +226,29 @@ function renderArtists() {
   const n = artists.length;
   $("#artists-count").textContent = n ? `${plural(n, "artiste")} suivi${n > 1 ? "s" : ""}` : "Aucun artiste";
   $("#artists-empty").hidden = n > 0;
-  $("#artists").innerHTML = [...artists]
-    .sort((a, b) => a.name.localeCompare(b.name, "fr", { sensitivity: "base" }))
-    .map((a) => `
+  // groupés par lettre, comme les Contacts de l'iPhone (chiffres et symboles dans « # », à la fin)
+  const letterOf = (name) => {
+    const c = (name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().charAt(0).toUpperCase();
+    return /[A-Z]/.test(c) ? c : "#";
+  };
+  const groups = new Map();
+  for (const a of [...artists].sort((x, y) => x.name.localeCompare(y.name, "fr", { sensitivity: "base" }))) {
+    const l = letterOf(a.name);
+    if (!groups.has(l)) groups.set(l, []);
+    groups.get(l).push(a);
+  }
+  const letters = [...groups.keys()].sort((x, y) => (x === "#") - (y === "#") || x.localeCompare(y));
+  $("#artists").innerHTML = letters.map((l) => `
+    <h2 class="letter">${l}</h2>
+    <ul class="list">${groups.get(l).map((a) => `
       <li>
         <button class="main" data-open="${esc(a.id)}">
           <span class="avatar">${initial(a.name)}<img src="${photo(a.id)}" alt="" loading="lazy" decoding="async"></span>
           <span class="name">${esc(a.name)}</span>
         </button>
         <button class="x" data-remove="${esc(a.id)}" aria-label="Supprimer ${esc(a.name)}">${ICON_X}</button>
-      </li>`).join("");
+      </li>`).join("")}
+    </ul>`).join("");
 }
 
 /** Ajoute des artistes. `manual` : choisi à la main (même s'il avait été retiré avant). */
@@ -319,7 +332,7 @@ async function openArtist(id, fallbackName = "") {
   $("#sheet-disco").innerHTML = '<p class="empty">Chargement de la discographie…</p>';
   $("#sheet-open").onclick = () => openInMusic(`https://music.apple.com/${config.country}/artist/${id}`);
   $("#sheet-scroller").scrollTop = 0;
-  $("#sheet").hidden = false;
+  openSheet();
 
   let list = [];
   try { list = await discography(id, config.country); } catch {}
@@ -603,7 +616,74 @@ $("#ob-start").addEventListener("click", () => {
   loadReleases();
 });
 $("#q").addEventListener("input", (e) => search(e.target.value.trim()));
-$("#sheet-close").addEventListener("click", () => { $("#sheet").hidden = true; });
+$("#sheet-close").addEventListener("click", () => closeSheet());
+
+// ---------- Fiche : on la quitte en glissant le doigt vers la droite (comme sur iPhone) ----------
+
+const sheet = $("#sheet");
+const shade = document.createElement("div");
+shade.className = "shade";
+document.body.append(shade);
+
+function openSheet() {
+  sheet.classList.remove("leaving");
+  sheet.style.transform = "";
+  shade.style.opacity = "";
+  sheet.hidden = false;
+}
+
+function closeSheet(from = 0) {
+  if (sheet.hidden) return;
+  if (reduced()) { sheet.hidden = true; return; }
+  sheet.classList.add("leaving");
+  sheet.style.transform = `translateX(${from}px)`;
+  shade.style.transition = "opacity 0.28s";
+  requestAnimationFrame(() => {
+    sheet.style.transform = "translateX(100%)";
+    shade.style.opacity = "0";
+  });
+  setTimeout(() => {
+    sheet.hidden = true;
+    sheet.classList.remove("leaving");
+    sheet.style.transform = "";
+    shade.style.transition = "";
+  }, 300);
+}
+
+let swipe = null;
+sheet.addEventListener("touchstart", (e) => {
+  if (e.touches.length !== 1 || sheet.classList.contains("leaving")) return;
+  const t = e.touches[0];
+  swipe = { x0: t.clientX, y0: t.clientY, dx: 0, t0: performance.now(), dir: null };
+}, { passive: true });
+sheet.addEventListener("touchmove", (e) => {
+  if (!swipe) return;
+  const t = e.touches[0];
+  const dx = t.clientX - swipe.x0, dy = t.clientY - swipe.y0;
+  if (!swipe.dir) {
+    if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+    swipe.dir = Math.abs(dx) > Math.abs(dy) && dx > 0 ? "x" : "y"; // vers la droite : on quitte ; sinon on fait défiler
+  }
+  if (swipe.dir !== "x") return;
+  e.preventDefault();
+  swipe.dx = Math.max(0, dx);
+  sheet.style.transform = `translateX(${swipe.dx}px)`;
+  shade.style.opacity = String(0.35 * (1 - swipe.dx / innerWidth));
+}, { passive: false });
+function swipeEnd() {
+  if (!swipe) return;
+  const s = swipe;
+  swipe = null;
+  if (s.dir !== "x") return;
+  const speed = s.dx / Math.max(1, performance.now() - s.t0);
+  if (s.dx > innerWidth * 0.33 || speed > 0.6) { closeSheet(s.dx); haptic(); return; }
+  sheet.classList.add("leaving"); // retour en place
+  sheet.style.transform = "translateX(0)";
+  shade.style.opacity = "0";
+  setTimeout(() => sheet.classList.remove("leaving"), 300);
+}
+sheet.addEventListener("touchend", swipeEnd);
+sheet.addEventListener("touchcancel", swipeEnd);
 
 $("#results").addEventListener("click", (e) => {
   const add = e.target.closest("[data-add]")?.dataset.add;
@@ -659,7 +739,7 @@ function route(link) {
   if (/^https:\/\/music\.apple\.com\//.test(link)) return openInMusic(link);
   try {
     const tab = new URL(link, location.origin).searchParams.get("tab");
-    if (tab) { $("#sheet").hidden = true; showTab(tab); loadReleases(); }
+    if (tab) { closeSheet(); showTab(tab); loadReleases(); }
   } catch {}
 }
 

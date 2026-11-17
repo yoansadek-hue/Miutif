@@ -13,7 +13,7 @@
 <link rel="manifest" href="/manifest.webmanifest?v=3">
 <link rel="icon" type="image/png" href="/icons/favicon.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
-<link rel="stylesheet" href="/style.css?v=10">
+<link rel="stylesheet" href="/style.css?v=11">
 </head>
 <body>
 <!-- bande pleine sous l'heure et la batterie : rien ne défile dessous, donc pas de flou -->
@@ -33,7 +33,7 @@
         <input id="q" type="search" placeholder="Ajouter un artiste" autocomplete="off" enterkeyhint="search">
       </label>
       <ul class="list results" id="results" hidden></ul>
-      <ol class="list artists" id="artists"></ol>
+      <div id="artists"></div>
       <p class="empty" id="artists-empty">Ajoute une playlist dans Réglages, ou cherche un artiste ci-dessus.</p>
     </section>
 
@@ -100,7 +100,7 @@
 <!-- Fiche artiste -->
 <div class="sheet" id="sheet" hidden role="dialog" aria-modal="true" aria-labelledby="sheet-name">
   <div class="sheet-bar">
-    <button class="close" id="sheet-close" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+    <button class="close back" id="sheet-close" aria-label="Retour"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M15 5l-7 7 7 7"/></svg></button>
   </div>
   <div class="sheet-view">
     <div class="scroller" id="sheet-scroller">
@@ -154,6 +154,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=11" type="module"></script>
+<script src="/app.js?v=12" type="module"></script>
 </body>
 </html>
