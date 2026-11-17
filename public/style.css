@@ -263,16 +263,52 @@ label.row { cursor: pointer; }
 
 .field-error { color: #ff6b61; font-size: 13px; padding: 8px 16px 0; }
 
-/* Index A à Z, sur le bord droit de la liste des artistes */
+/* Index A à Z, intégré au bord droit de la liste des artistes */
 .az {
-  position: fixed; right: 2px; z-index: 25;
-  top: calc(var(--top) + 150px); bottom: calc(var(--tabbar) + 12px);
-  width: 18px; display: flex; flex-direction: column; justify-content: center; align-items: center;
+  position: fixed; right: 3px; z-index: 25;
+  top: calc(var(--top) + 140px); bottom: calc(var(--tabbar) + 14px);
+  width: 22px; padding: 6px 0; border-radius: 11px;
+  display: flex; flex-direction: column; justify-content: center; align-items: center;
+  background: rgba(255, 255, 255, 0.035);
   touch-action: none; -webkit-user-select: none; user-select: none;
+  transition: background 0.2s;
 }
-.az span { flex: 0 1 18px; display: grid; place-items: center; width: 100%; font-size: 11px; font-weight: 600; line-height: 1; color: rgba(255, 255, 255, 0.85); }
-.az span.dim { color: var(--faint); }
-.az.active { background: rgba(255, 255, 255, 0.06); border-radius: 9px; }
+.az span {
+  flex: 1 1 0; min-height: 0; max-height: 18px; width: 18px; border-radius: 9px;
+  display: grid; place-items: center; font-size: 10.5px; font-weight: 700; line-height: 1;
+  color: rgba(255, 255, 255, 0.8); transition: background 0.15s, color 0.15s, transform 0.15s;
+}
+.az span.dim { color: rgba(255, 255, 255, 0.22); }
+/* la lettre en cours : celle de la section affichée, ou celle sous le doigt */
+.az span.cur { background: #fff; color: var(--navy); transform: scale(1.18); }
+.az.active { background: rgba(255, 255, 255, 0.09); }
+/* la liste laisse la place à l'index (il ne chevauche plus les croix) */
+.with-az #artists { margin-right: 18px; }
+/* grosse lettre qui suit le doigt pendant qu'on glisse sur l'index */
+.az-bubble {
+  position: fixed; right: 40px; z-index: 26; width: 64px; height: 64px; margin-top: -32px; border-radius: 50%;
+  display: grid; place-items: center; font-size: 30px; font-weight: 700; color: #fff;
+  background: rgba(30, 50, 90, 0.55); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12), 0 10px 30px rgba(0, 0, 0, 0.4);
+  opacity: 0; transform: scale(0.6); pointer-events: none; transition: opacity 0.15s, transform 0.15s;
+}
+.az-bubble.show { opacity: 1; transform: scale(1); }
+
+/* Tirer pour recharger */
+.ptr {
+  position: fixed; left: 50%; top: calc(var(--top) + 6px); z-index: 30; width: 40px; height: 40px; margin-left: -20px;
+  border-radius: 50%; display: grid; place-items: center; pointer-events: none; opacity: 0;
+  background: rgba(30, 50, 90, 0.55); -webkit-backdrop-filter: blur(16px); backdrop-filter: blur(16px);
+  box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.12);
+}
+.ptr svg { width: 28px; height: 28px; transform: rotate(-90deg); }
+.ptr circle { fill: none; stroke-width: 3.5; }
+.ptr .track { stroke: rgba(255, 255, 255, 0.15); }
+.ptr .arc { stroke: #fff; stroke-linecap: round; stroke-dasharray: 88; stroke-dashoffset: 88; }
+.ptr.spin svg { animation: ptrspin 0.7s linear infinite; }
+@keyframes ptrspin { to { transform: rotate(270deg); } }
+.tab-scroller > .page { transform: translateY(var(--pull, 0px)); transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.tab-scroller.pulling > .page { transition: none; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

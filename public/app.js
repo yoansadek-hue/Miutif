@@ -109,34 +109,122 @@ let presentLetters = [];
 const azEl = $("#az");
 azEl.innerHTML = AZ.map((l) => `<span data-l="${l}">${l}</span>`).join("");
 
+const azBubble = $("#az-bubble");
+const azSpans = () => [...azEl.querySelectorAll("span")];
+
 /** Visible seulement sur l'onglet Artistes, hors recherche, et quand la liste est assez longue. */
 function updateIndex() {
   const show = current === "artists" && !$("#q").value.trim() && artists.length >= 15 && $("#sheet").hidden;
   azEl.hidden = !show;
-  azEl.querySelectorAll("span").forEach((el) => el.classList.toggle("dim", !presentLetters.includes(el.dataset.l)));
+  $("#tab-artists").classList.toggle("with-az", show);
+  azSpans().forEach((el) => el.classList.toggle("dim", !presentLetters.includes(el.dataset.l)));
+  if (show) markCurrentLetter();
 }
 
-let azLast = null;
+/** Met en évidence une lettre de l'index. */
+function setCurLetter(l) {
+  azSpans().forEach((el) => el.classList.toggle("cur", el.dataset.l === l));
+}
+
+/** Pendant le défilement : la lettre de la section en haut de l'écran est mise en évidence. */
+function markCurrentLetter() {
+  if (azEl.classList.contains("active")) return;
+  const scroller = $("#scroll-artists");
+  const top = scroller.getBoundingClientRect().top + 12;
+  let cur = presentLetters[0];
+  for (const h of document.querySelectorAll("#artists .letter")) {
+    if (h.getBoundingClientRect().top <= top) cur = h.dataset.letter; else break;
+  }
+  setCurLetter(cur);
+}
+let azRaf = 0;
+$("#scroll-artists").addEventListener("scroll", () => {
+  if (azEl.hidden || azRaf) return;
+  azRaf = requestAnimationFrame(() => { azRaf = 0; markCurrentLetter(); });
+}, { passive: true });
+
+let azLastIndex = -1;
 function azJump(clientY) {
   const r = azEl.getBoundingClientRect();
   const i = Math.max(0, Math.min(AZ.length - 1, Math.floor(((clientY - r.top) / r.height) * AZ.length)));
-  // lettre absente : on va à la suivante présente (ou la dernière)
+  if (i === azLastIndex) return;
+  azLastIndex = i;
+  haptic(); // petite vibration à chaque lettre franchie
+  const letter = AZ[i];
+  setCurLetter(letter);
+  azBubble.textContent = letter;
+  azBubble.style.top = `${Math.max(r.top + 32, Math.min(r.bottom - 32, clientY))}px`;
+  azBubble.classList.add("show");
+  // lettre sans artiste : on va à la suivante qui en a (ou la dernière)
   const target = AZ.slice(i).find((l) => presentLetters.includes(l)) || presentLetters[presentLetters.length - 1];
-  if (!target || target === azLast) return;
-  azLast = target;
-  const head = $(`#artists [data-letter="${target}"]`);
+  const head = target && $(`#artists [data-letter="${target}"]`);
   const scroller = $("#scroll-artists");
   if (head) scroller.scrollTop = head.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 4;
-  haptic();
 }
 azEl.addEventListener("pointerdown", (e) => {
-  azLast = null;
+  azLastIndex = -1;
   try { azEl.setPointerCapture(e.pointerId); } catch {}
   azEl.classList.add("active");
   azJump(e.clientY);
 });
 azEl.addEventListener("pointermove", (e) => { if (azEl.classList.contains("active")) azJump(e.clientY); });
-for (const ev of ["pointerup", "pointercancel"]) azEl.addEventListener(ev, () => azEl.classList.remove("active"));
+for (const ev of ["pointerup", "pointercancel"]) {
+  azEl.addEventListener(ev, () => {
+    azEl.classList.remove("active");
+    azBubble.classList.remove("show");
+    markCurrentLetter();
+  });
+}
+
+// ---------- Tirer vers le bas : le rond se remplit, puis l'app se recharge entièrement ----------
+// (seulement tout en haut d'une page, pour un geste vraiment vertical ; rien ne bouge avant 24 px)
+(() => {
+  const ptr = $("#ptr"), arc = ptr.querySelector(".arc"), LEN = 88, DEAD = 24, NEED = 72;
+  let st = null, busy = false;
+  const set = (sc, d, p) => {
+    sc.style.setProperty("--pull", `${d}px`);
+    ptr.style.opacity = String(Math.min(1, d / 40));
+    ptr.style.transform = `translateY(${Math.min(d, 60) - 20}px)`;
+    arc.style.strokeDashoffset = String(LEN * (1 - p));
+  };
+  for (const t of TABS) {
+    const sc = $(`#scroll-${t}`);
+    sc.addEventListener("touchstart", (e) => {
+      st = !busy && sc.scrollTop <= 0 && e.touches.length === 1
+        ? { sc, x: e.touches[0].clientX, y: e.touches[0].clientY, on: false, dy: 0, ready: false } : null;
+    }, { passive: true });
+    sc.addEventListener("touchmove", (e) => {
+      if (!st || st.sc !== sc) return;
+      const dx = e.touches[0].clientX - st.x, dy = e.touches[0].clientY - st.y;
+      if (!st.on) {
+        if (dy < DEAD || Math.abs(dx) > dy || sc.scrollTop > 0) { if (dy < -4 || Math.abs(dx) > 12) st = null; return; }
+        st.on = true;
+        sc.classList.add("pulling");
+      }
+      st.dy = dy - DEAD;
+      const d = 110 * (1 - Math.exp(-st.dy / 110)); // le contenu suit le doigt, de plus en plus difficilement
+      const p = Math.min(1, st.dy / NEED);
+      set(sc, d, p);
+      if (p >= 1 && !st.ready) { st.ready = true; haptic(); }
+      if (p < 1) st.ready = false;
+      if (e.cancelable) e.preventDefault();
+    }, { passive: false });
+    const end = () => {
+      if (!st || st.sc !== sc) return;
+      const s = st;
+      st = null;
+      sc.classList.remove("pulling");
+      if (!s.on) return;
+      if (s.dy < NEED) { set(sc, 0, 0); return; }
+      busy = true;
+      ptr.classList.add("spin");
+      set(sc, 56, 0.75);
+      setTimeout(() => location.reload(), 450); // rechargement complet de l'app
+    };
+    sc.addEventListener("touchend", end, { passive: true });
+    sc.addEventListener("touchcancel", end, { passive: true });
+  }
+})();
 
 /**
  * Appui sur un onglet de la barre. Une fiche artiste ouverte se ferme (on revient à la liste).
