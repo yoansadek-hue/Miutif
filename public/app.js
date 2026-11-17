@@ -474,21 +474,40 @@ async function renderNotifState() {
   $("#notif-time").textContent = `${String(config.hour).padStart(2, "0")}:00`;
   const sub = await currentSubscription();
   const on = !!sub && Notification.permission === "granted";
-  $("#enable").hidden = on;
+  const denied = pushSupported && Notification.permission === "denied";
+  const sw = $("#notif-switch");
+  sw.checked = on;
+  sw.disabled = !pushSupported || denied;
   renderOnboardNotif(on);
-  $("#notif-state").textContent = on ? "Activées"
-    : pushSupported && Notification.permission === "denied" ? "Refusées (Réglages iPhone)"
-    : isIOS && !standalone ? "Depuis l'écran d'accueil"
-    : "Désactivées";
+  $("#notif-foot").textContent = denied
+    ? "Notifications bloquées : réactive-les dans Réglages › Notifications › Miutif sur ton iPhone."
+    : !pushSupported && isIOS && !standalone
+      ? "Pour les notifications, ajoute Miutif à l'écran d'accueil (Safari › Partager › Sur l'écran d'accueil)."
+      : "Une seule notification par jour avec toutes les nouvelles sorties de tes artistes.";
   return sub;
+}
+
+/** Interrupteur coupé : ce téléphone ne reçoit plus rien (le serveur oublie son abonnement). */
+async function disableNotifications() {
+  try {
+    const sub = await currentSubscription();
+    if (sub) await sub.unsubscribe();
+    await sync({ subscription: null });
+    toast("Notifications désactivées");
+  } catch (e) {
+    toast(`Impossible de désactiver : ${e.message}`);
+  } finally {
+    renderNotifState();
+  }
 }
 
 async function enableNotifications() {
   if (!pushSupported) {
     toast(isIOS && !standalone ? "Ajoute d'abord Miutif à l'écran d'accueil" : "Ce navigateur ne gère pas les notifications");
+    renderNotifState();
     return;
   }
-  const btn = $("#enable");
+  const btn = $("#notif-switch");
   btn.disabled = true;
   try {
     const permission = await Notification.requestPermission();
@@ -568,7 +587,7 @@ async function importAppleMusic() {
 // ---------- Événements ----------
 
 BTNS.forEach((b) => b.addEventListener("click", (e) => { if (e.detail === 0) showTab(b.dataset.tab); }));
-$("#enable").addEventListener("click", enableNotifications);
+$("#notif-switch").addEventListener("change", (e) => (e.target.checked ? enableNotifications() : disableNotifications()));
 $("#am-import").addEventListener("click", importAppleMusic);
 $("#pl-add").addEventListener("click", () => addPlaylistFromField());
 $("#pl-url").addEventListener("keydown", (e) => { if (e.key === "Enter") addPlaylistFromField(); });

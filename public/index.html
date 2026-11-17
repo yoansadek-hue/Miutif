@@ -13,7 +13,7 @@
 <link rel="manifest" href="/manifest.webmanifest?v=3">
 <link rel="icon" type="image/png" href="/icons/favicon.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
-<link rel="stylesheet" href="/style.css?v=7">
+<link rel="stylesheet" href="/style.css?v=8">
 </head>
 <body>
 <!-- bande pleine sous l'heure et la batterie : rien ne défile dessous, donc pas de flou -->
@@ -57,11 +57,13 @@
 
       <h2 class="group-title">Notifications</h2>
       <div class="group">
+        <label class="row">
+          <span>Notifications</span>
+          <input type="checkbox" class="switch" id="notif-switch" role="switch" aria-label="Notifications">
+        </label>
         <div class="row"><span>Tous les jours à</span><span class="value" id="notif-time">11:00</span></div>
-        <div class="row"><span>Sur ce téléphone</span><span class="value" id="notif-state">Désactivées</span></div>
-        <button class="row action" id="enable">Activer les notifications</button>
       </div>
-      <p class="group-foot">Une seule notification par jour avec toutes les nouvelles sorties de tes artistes.</p>
+      <p class="group-foot" id="notif-foot">Une seule notification par jour avec toutes les nouvelles sorties de tes artistes.</p>
 
       <h2 class="group-title">Playlists</h2>
       <div class="group" id="playlists"></div>
@@ -151,6 +153,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=6" type="module"></script>
+<script src="/app.js?v=7" type="module"></script>
 </body>
 </html>
