@@ -98,13 +98,127 @@ function showTab(tab) {
   if (!TABS.includes(tab)) tab = "new";
   const scroller = $("#scroller");
   if (current) scrollPos[current] = scroller.scrollTop;
+  const first = current === null;
   current = tab;
   for (const t of TABS) $(`#tab-${t}`).hidden = t !== tab;
-  document.querySelectorAll(".tab").forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
-  $("#tabpill").style.transform = `translateX(${TABS.indexOf(tab) * 100}%)`;
+  BTNS.forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
+  pillTo(BTNS.find((b) => b.dataset.tab === tab), !first);
   scroller.scrollTop = scrollPos[tab] || 0;
   $("#results").hidden = true;
 }
+
+// ---------- Barre d'onglets : on peut y glisser le doigt (comme Quizly) ----------
+
+const bar = $("#tabbar");
+const pill = $("#tabpill");
+const BTNS = [...bar.querySelectorAll(".tab")];
+const P = { x: 0, anim: null };
+const reduced = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
+const place = (x, sx = 1, sy = 1) => { P.x = x; pill.style.transform = `translate3d(${x}px,0,0) scale(${sx},${sy})`; };
+
+// petit « tic » quand la bulle change d'onglet : vibrate sur Android ;
+// sur iPhone (iOS 18+), basculer un interrupteur caché fait vibrer le téléphone
+const hapticSwitch = (() => {
+  if ("vibrate" in navigator) return null;
+  const input = document.createElement("input");
+  input.type = "checkbox"; input.setAttribute("switch", ""); input.tabIndex = -1;
+  if (!("switch" in input)) return null;
+  const label = document.createElement("label");
+  label.setAttribute("aria-hidden", "true"); label.append(input);
+  label.style.cssText = "position:fixed;left:-99px;top:0;width:1px;height:1px;opacity:0;pointer-events:none";
+  document.body.append(label);
+  return label;
+})();
+function haptic() { if (navigator.vibrate) navigator.vibrate(8); else if (hapticSwitch) hapticSwitch.click(); }
+
+/** Amène la bulle sous un onglet, avec un petit étirement pendant le trajet. */
+function pillTo(btn, animate = true, from = P.x) {
+  if (!btn) return;
+  const x = btn.offsetLeft, w = btn.offsetWidth;
+  pill.style.width = `${w}px`;
+  if (P.anim) { P.anim.cancel(); P.anim = null; }
+  if (animate && Math.abs(x - from) > 1 && !reduced()) {
+    const d = Math.abs(x - from), k = Math.min(0.55, d / (w * 2.6));
+    P.anim = pill.animate([
+      { transform: `translate3d(${from}px,0,0) scale(1,1)` },
+      { offset: 0.42, transform: `translate3d(${from + (x - from) * 0.58}px,0,0) scale(${1 + k},${1 - k * 0.32})` },
+      { offset: 0.8, transform: `translate3d(${x + (x - from) * 0.02}px,0,0) scale(${1 - k * 0.08},${1 + k * 0.06})` },
+      { transform: `translate3d(${x}px,0,0) scale(1,1)` },
+    ], { duration: 380 + Math.min(180, d * 0.5), easing: "cubic-bezier(.22,.8,.3,1)" });
+    P.anim.onfinish = () => { P.anim = null; };
+  }
+  place(x);
+}
+
+let drag = null;
+/** Onglet le plus proche du doigt (calculé directement, sans attendre la prochaine image). */
+function tabUnder(cx) {
+  const w = pill.offsetWidth, g = drag.geo;
+  const mid = Math.max(g[0].x, Math.min(g[g.length - 1].x, cx - drag.left - w / 2)) + w / 2;
+  return g.reduce((a, b) => (Math.abs(mid - (b.x + b.w / 2)) < Math.abs(mid - (a.x + a.w / 2)) ? b : a)).t;
+}
+function dragLoop() { // la bulle suit le doigt et s'étire selon la vitesse
+  if (!drag) return;
+  if (drag.moved) {
+    const w = pill.offsetWidth, g = drag.geo, lo = g[0].x, hi = g[g.length - 1].x;
+    const raw = drag.cx - drag.left - w / 2;
+    // au-delà du premier ou du dernier onglet : la bulle résiste et la barre s'étire de ce côté
+    const out = raw < lo ? raw - lo : raw > hi ? raw - hi : 0;
+    const x = out ? (out < 0 ? lo : hi) + Math.max(-14, Math.min(14, out * 0.12)) : raw;
+    if (!!out !== drag.edge) { drag.edge = !!out; if (out) haptic(); }
+    if (out) {
+      bar.style.transformOrigin = out < 0 ? "right center" : "left center";
+      bar.style.scale = `${1 + Math.min(0.045, (Math.abs(out) / bar.offsetWidth) * 0.2)} 1`;
+    } else bar.style.scale = "";
+    drag.v *= 0.82;
+    const k = Math.min(0.4, Math.abs(drag.v) * 0.09);
+    place(x, 1 + k, 1 - k * 0.3);
+    const mid = x + w / 2;
+    const over = g.reduce((a, b) => (Math.abs(mid - (b.x + b.w / 2)) < Math.abs(mid - (a.x + a.w / 2)) ? b : a)).t;
+    if (over !== drag.over) { drag.over.classList.remove("over"); over.classList.add("over"); drag.over = over; haptic(); }
+  }
+  requestAnimationFrame(dragLoop);
+}
+
+bar.addEventListener("pointerdown", (e) => {
+  const t = e.target.closest(".tab");
+  if (!t || (e.pointerType === "mouse" && e.button !== 0)) return;
+  drag = {
+    id: e.pointerId, x0: e.clientX, cx: e.clientX, t: performance.now(), v: 0, moved: false, edge: false,
+    left: bar.getBoundingClientRect().left, tab: t, over: t,
+    geo: BTNS.map((b) => ({ t: b, x: b.offsetLeft, w: b.offsetWidth })),
+  };
+  try { bar.setPointerCapture(e.pointerId); } catch {}
+  bar.classList.add("press");
+  pillTo(t);
+  requestAnimationFrame(dragLoop);
+});
+bar.addEventListener("pointermove", (e) => {
+  if (!drag || e.pointerId !== drag.id) return;
+  if (!drag.moved && Math.abs(e.clientX - drag.x0) < 5) return;
+  if (!drag.moved) { drag.moved = true; bar.classList.add("drag"); if (P.anim) { P.anim.cancel(); P.anim = null; } }
+  const now = performance.now(), dt = Math.max(1, now - drag.t);
+  drag.v = drag.v * 0.4 + ((e.clientX - drag.cx) / dt) * 0.6;
+  drag.cx = e.clientX; drag.t = now;
+});
+function dragEnd(e, cancel) {
+  if (!drag || e.pointerId !== drag.id) return;
+  const d = drag;
+  const t = cancel ? null : d.moved ? tabUnder(e.clientX || d.cx) : d.tab;
+  drag = null;
+  bar.classList.remove("press", "drag");
+  BTNS.forEach((b) => b.classList.remove("over"));
+  bar.style.scale = ""; // la barre reprend sa taille avec un rebond
+  if (t) {
+    if (!d.moved && !t.classList.contains("on")) haptic();
+    showTab(t.dataset.tab); // la bulle part de là où le doigt l'a laissée
+  } else {
+    pillTo(BTNS.find((b) => b.classList.contains("on")), true);
+  }
+}
+bar.addEventListener("pointerup", (e) => dragEnd(e));
+bar.addEventListener("pointercancel", (e) => dragEnd(e, true));
+addEventListener("resize", () => pillTo(BTNS.find((b) => b.classList.contains("on")), false));
 
 // ---------- Artistes ----------
 
@@ -453,7 +567,7 @@ async function importAppleMusic() {
 
 // ---------- Événements ----------
 
-document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
+BTNS.forEach((b) => b.addEventListener("click", (e) => { if (e.detail === 0) showTab(b.dataset.tab); }));
 $("#enable").addEventListener("click", enableNotifications);
 $("#am-import").addEventListener("click", importAppleMusic);
 $("#pl-add").addEventListener("click", () => addPlaylistFromField());
