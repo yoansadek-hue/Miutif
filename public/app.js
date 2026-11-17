@@ -159,7 +159,13 @@ function azJump(clientY) {
   const target = AZ.slice(i).find((l) => presentLetters.includes(l)) || presentLetters[presentLetters.length - 1];
   const head = target && $(`#artists [data-letter="${target}"]`);
   const scroller = $("#scroll-artists");
-  if (head) scroller.scrollTop = head.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 4;
+  if (head) {
+    const y = head.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 4;
+    // si la liste est encore lancée, on coupe son élan : sinon iOS ignore le saut et l'index semble ne pas marcher
+    scroller.style.overflowY = "hidden";
+    scroller.scrollTop = y;
+    requestAnimationFrame(() => { scroller.style.overflowY = ""; scroller.scrollTop = y; });
+  }
 }
 azEl.addEventListener("pointerdown", (e) => {
   azLastIndex = -1;
@@ -175,6 +181,16 @@ for (const ev of ["pointerup", "pointercancel"]) {
     markCurrentLetter();
   });
 }
+
+// ---------- Défiler la liste pendant une recherche ferme le clavier ----------
+(() => {
+  const sc = $("#scroll-artists"), q = $("#q");
+  let y0 = null;
+  sc.addEventListener("touchstart", (e) => { y0 = document.activeElement === q ? e.touches[0].clientY : null; }, { passive: true });
+  sc.addEventListener("touchmove", (e) => {
+    if (y0 !== null && Math.abs(e.touches[0].clientY - y0) > 10) { q.blur(); y0 = null; }
+  }, { passive: true });
+})();
 
 // ---------- Tirer vers le bas : le rond se remplit, puis l'app se recharge entièrement ----------
 // (seulement tout en haut d'une page, pour un geste vraiment vertical ; rien ne bouge avant 24 px)
@@ -221,7 +237,7 @@ for (const ev of ["pointerup", "pointercancel"]) {
       ptr.classList.add("spin");
       set(sc, 64, 1);
       haptic();
-      setTimeout(() => location.reload(), 700); // rechargement complet de l'app
+      setTimeout(() => location.replace(`/?tab=${current}`), 700); // rechargement complet, sur le même onglet
     };
     sc.addEventListener("touchend", end, { passive: true });
     sc.addEventListener("touchcancel", end, { passive: true });
