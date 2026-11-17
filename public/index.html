@@ -13,7 +13,7 @@
 <link rel="manifest" href="/manifest.webmanifest?v=3">
 <link rel="icon" type="image/png" href="/icons/favicon.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
-<link rel="stylesheet" href="/style.css?v=14">
+<link rel="stylesheet" href="/style.css?v=15">
 </head>
 <body>
 <!-- bande pleine sous l'heure et la batterie : rien ne défile dessous, donc pas de flou -->
@@ -77,6 +77,7 @@
         </div>
         <button class="row action" id="pl-add">Coller le lien et ajouter</button>
       </div>
+      <p class="field-error" id="pl-error" hidden></p>
       <p class="group-foot">Dans Apple Music : ouvre la playlist › ••• › Partager › Copier le lien. Ajoute autant de playlists que tu veux : leurs artistes sont suivis, et chaque playlist est relue tous les jours.</p>
       <p class="group-foot">Apple ne partage que les 300 premiers titres d'une playlist. Si la tienne est plus longue, les artistes des titres suivants ne sont pas ajoutés : ajoute-les depuis l'onglet Artistes.</p>
 
@@ -87,6 +88,9 @@
     </div>
 
 </main>
+
+<!-- index A à Z de la liste des artistes -->
+<div class="az" id="az" hidden aria-hidden="true"></div>
 
 <nav class="tabbar" id="tabbar" aria-label="Onglets">
   <span class="tabpill" id="tabpill" aria-hidden="true"></span>
@@ -137,6 +141,7 @@
         </div>
         <button class="row action" id="ob-add">Coller le lien</button>
       </div>
+      <p class="field-error" id="ob-error" hidden></p>
       <p class="group-foot">Dans Apple Music : ouvre ta playlist › ••• › Partager › Copier le lien. Seuls les 300 premiers titres d'une playlist sont lus.</p>
 
       <h2 class="group-title">2 · Notifications</h2>
@@ -160,7 +165,6 @@
   </div>
 </div>
 
-<div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=15" type="module"></script>
+<script src="/app.js?v=16" type="module"></script>
 </body>
 </html>

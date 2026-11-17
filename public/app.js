@@ -34,15 +34,6 @@ async function api(path, body) {
   return data;
 }
 
-let toastTimer;
-function toast(msg) {
-  const el = $("#toast");
-  el.textContent = msg;
-  el.classList.add("show");
-  clearTimeout(toastTimer);
-  toastTimer = setTimeout(() => el.classList.remove("show"), 2600);
-}
-
 const esc = (s) => String(s ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
 const debounce = (fn, ms) => { let t; return (...a) => { clearTimeout(t); t = setTimeout(() => fn(...a), ms); }; };
 const plural = (n, word) => `${n} ${word}${n > 1 ? "s" : ""}`;
@@ -76,6 +67,13 @@ function confirmBox(title, text, ok = "Supprimer") {
   });
 }
 
+/** Petit message d'erreur sous le champ du lien de playlist (vide = efface). */
+function fieldError(inputSel, msg) {
+  const el = $(inputSel === "#ob-url" ? "#ob-error" : "#pl-error");
+  el.textContent = msg;
+  el.hidden = !msg;
+}
+
 // ---------- Synchronisation ----------
 
 const sync = (extra = {}) => api("sync", { id: userId, artists, playlists, excluded: [...excluded], tz, ...extra });
@@ -101,7 +99,44 @@ function showTab(tab) {
   for (const t of TABS) $(`#scroll-${t}`).classList.toggle("off", t !== tab);
   BTNS.forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   pillTo(BTNS.find((b) => b.dataset.tab === tab), !first);
+  updateIndex();
 }
+
+// ---------- Index A à Z de la liste des artistes (comme les Contacts) ----------
+
+const AZ = [..."ABCDEFGHIJKLMNOPQRSTUVWXYZ", "#"];
+let presentLetters = [];
+const azEl = $("#az");
+azEl.innerHTML = AZ.map((l) => `<span data-l="${l}">${l}</span>`).join("");
+
+/** Visible seulement sur l'onglet Artistes, hors recherche, et quand la liste est assez longue. */
+function updateIndex() {
+  const show = current === "artists" && !$("#q").value.trim() && artists.length >= 15 && $("#sheet").hidden;
+  azEl.hidden = !show;
+  azEl.querySelectorAll("span").forEach((el) => el.classList.toggle("dim", !presentLetters.includes(el.dataset.l)));
+}
+
+let azLast = null;
+function azJump(clientY) {
+  const r = azEl.getBoundingClientRect();
+  const i = Math.max(0, Math.min(AZ.length - 1, Math.floor(((clientY - r.top) / r.height) * AZ.length)));
+  // lettre absente : on va à la suivante présente (ou la dernière)
+  const target = AZ.slice(i).find((l) => presentLetters.includes(l)) || presentLetters[presentLetters.length - 1];
+  if (!target || target === azLast) return;
+  azLast = target;
+  const head = $(`#artists [data-letter="${target}"]`);
+  const scroller = $("#scroll-artists");
+  if (head) scroller.scrollTop = head.getBoundingClientRect().top - scroller.getBoundingClientRect().top + scroller.scrollTop - 4;
+  haptic();
+}
+azEl.addEventListener("pointerdown", (e) => {
+  azLast = null;
+  try { azEl.setPointerCapture(e.pointerId); } catch {}
+  azEl.classList.add("active");
+  azJump(e.clientY);
+});
+azEl.addEventListener("pointermove", (e) => { if (azEl.classList.contains("active")) azJump(e.clientY); });
+for (const ev of ["pointerup", "pointercancel"]) azEl.addEventListener(ev, () => azEl.classList.remove("active"));
 
 /**
  * Appui sur un onglet de la barre. Une fiche artiste ouverte se ferme (on revient à la liste).
@@ -250,8 +285,9 @@ function renderArtists() {
     groups.get(l).push(a);
   }
   const letters = [...groups.keys()].sort((x, y) => (x === "#") - (y === "#") || x.localeCompare(y));
+  presentLetters = letters;
   $("#artists").innerHTML = letters.map((l) => `
-    <h2 class="letter">${l}</h2>
+    <h2 class="letter" data-letter="${l}">${l}</h2>
     <ul class="list">${groups.get(l).map((a) => `
       <li>
         <button class="main" data-open="${esc(a.id)}">
@@ -308,6 +344,7 @@ let lastResults = [];
 function updateSearchMode() {
   const searching = !!$("#q").value.trim();
   $("#artists").hidden = searching;
+  updateIndex();
   $("#artists-empty").hidden = searching || artists.length > 0;
   if (!searching) { $("#results").hidden = true; lastResults = []; }
 }
@@ -317,8 +354,8 @@ const search = debounce(async (q) => {
   try {
     lastResults = await searchArtists(q, config.country);
     renderResults();
-  } catch (e) {
-    toast(e.message);
+  } catch {
+    // erreur ignorée (plus de message en bas de l\'écran)
   }
 }, 300);
 
@@ -365,8 +402,8 @@ async function openArtist(id, fallbackName = "") {
     followBtn.classList.toggle("on", on);
   };
   followBtn.onclick = () => {
-    if (artists.some((a) => a.id === id)) { unfollowArtist(id); toast(`Tu ne suis plus ${name}`); }
-    else if (addArtists([{ id, name: $("#sheet-name").textContent || name }], { manual: true })) { toast(`${name} ajouté`); loadReleasesSoon(); }
+    if (artists.some((a) => a.id === id)) { unfollowArtist(id); }
+    else if (addArtists([{ id, name: $("#sheet-name").textContent || name }], { manual: true })) loadReleasesSoon();
     paint();
     if (lastResults.length) renderResults();
   };
@@ -452,8 +489,8 @@ async function loadReleases() {
   try {
     releases = await recentReleases(artists.map((a) => a.id), { country: config.country, days: 30 });
     store.set("releases", releases);
-  } catch (e) {
-    if (!releases.length) toast(e.message);
+  } catch {
+    // pas de réseau : on garde la dernière liste affichée
   } finally {
     loadingReleases = false;
   }
@@ -495,18 +532,16 @@ async function addPlaylistFromField(inputSel = "#pl-url", btnSel = "#pl-add") {
   if (!value) {
     try { value = await navigator.clipboard.readText(); } catch {}
   }
-  if (!value) { $(inputSel).focus(); toast("Colle le lien dans le champ"); return; }
+  fieldError(inputSel, "");
+  if (!value) { $(inputSel).focus(); fieldError(inputSel, "Colle le lien de ta playlist dans le champ."); return; }
   btn.disabled = true;
   btn.textContent = "Ajout…";
   try {
     const r = await importPlaylist(value);
     $(inputSel).value = "";
-    toast(r.truncated
-      ? `${plural(r.added, "artiste")} ajouté${r.added > 1 ? "s" : ""} (seulement les 300 premiers titres de la playlist)`
-      : r.added ? `${plural(r.added, "artiste")} ajouté${r.added > 1 ? "s" : ""}` : "Playlist ajoutée");
     loadReleasesSoon();
   } catch (e) {
-    toast(e.message);
+    fieldError(inputSel, e.message); // seule erreur gardée : sous le champ, pas en bas de l'écran
   } finally {
     btn.disabled = false;
     btn.textContent = label;
@@ -520,7 +555,6 @@ async function refreshPlaylists() {
   for (const p of playlists) {
     try { added += (await importPlaylist(p.url)).added; } catch {}
   }
-  if (added) toast(`${added} nouvel${added > 1 ? "s" : ""} artiste${added > 1 ? "s" : ""} depuis tes playlists`);
   return added;
 }
 
@@ -555,9 +589,8 @@ async function disableNotifications() {
     const sub = await currentSubscription();
     if (sub) await sub.unsubscribe();
     await sync({ subscription: null });
-    toast("Notifications désactivées");
-  } catch (e) {
-    toast(`Impossible de désactiver : ${e.message}`);
+  } catch {
+    // erreur ignorée (plus de message en bas de l\'écran)
   } finally {
     renderNotifState();
   }
@@ -565,7 +598,6 @@ async function disableNotifications() {
 
 async function enableNotifications() {
   if (!pushSupported) {
-    toast(isIOS && !standalone ? "Ajoute d'abord Miutif à l'écran d'accueil" : "Ce navigateur ne gère pas les notifications");
     renderNotifState();
     return;
   }
@@ -573,15 +605,14 @@ async function enableNotifications() {
   btn.disabled = true;
   try {
     const permission = await Notification.requestPermission();
-    if (permission !== "granted") { toast("Notifications refusées"); return; }
+    if (permission !== "granted") return;
     if (!config.vapidKey) config = { ...config, ...(await api("config")) };
     const reg = await navigator.serviceWorker.ready;
     const sub = (await reg.pushManager.getSubscription())
       || (await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: b64ToBytes(config.vapidKey) }));
     await sync({ subscription: sub.toJSON() });
-    toast("Notifications activées");
-  } catch (e) {
-    toast(`Impossible d'activer : ${e.message}`);
+  } catch {
+    // erreur ignorée (plus de message en bas de l\'écran)
   } finally {
     btn.disabled = false;
     renderNotifState();
@@ -638,11 +669,10 @@ async function importAppleMusic() {
       }
       if (!data.next) break;
     }
-    const n = addArtists(found);
-    toast(n ? `${plural(n, "artiste")} ajouté${n > 1 ? "s" : ""}` : "Tous tes artistes sont déjà suivis");
+    addArtists(found);
     loadReleasesSoon();
-  } catch (e) {
-    toast(`Import impossible : ${e.message || e}`);
+  } catch {
+    // erreur ignorée (plus de message en bas de l\'écran)
   }
 }
 
@@ -677,11 +707,12 @@ function openSheet() {
   sheet.style.transform = "";
   shade.style.opacity = "";
   sheet.hidden = false;
+  updateIndex();
 }
 
 function closeSheet(from = 0) {
   if (sheet.hidden) return;
-  if (reduced()) { sheet.hidden = true; return; }
+  if (reduced()) { sheet.hidden = true; updateIndex(); return; }
   sheet.classList.add("leaving");
   sheet.style.transform = `translateX(${from}px)`;
   shade.style.transition = "opacity 0.28s";
@@ -694,6 +725,7 @@ function closeSheet(from = 0) {
     sheet.classList.remove("leaving");
     sheet.style.transform = "";
     shade.style.transition = "";
+    updateIndex();
   }, 300);
 }
 
@@ -735,15 +767,13 @@ sheet.addEventListener("touchcancel", swipeEnd);
 $("#results").addEventListener("click", (e) => {
   const off = e.target.closest("[data-unfollow-artist]")?.dataset.unfollowArtist;
   if (off) {
-    const a = artists.find((x) => x.id === off);
     unfollowArtist(off);
-    if (a) toast(`Tu ne suis plus ${a.name}`);
     return;
   }
   const add = e.target.closest("[data-add]")?.dataset.add;
   if (add) {
     const a = lastResults.find((x) => x.id === add);
-    if (a && addArtists([a], { manual: true })) { toast(`${a.name} ajouté`); loadReleasesSoon(); }
+    if (a && addArtists([a], { manual: true })) loadReleasesSoon();
     renderResults();
     return;
   }
