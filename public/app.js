@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, recentReleases, playlistUrl, discography } from "./music.js?v=5";
+import { searchArtists, recentReleases, playlistUrl, discography, trackDates } from "./music.js?v=7";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -405,7 +405,7 @@ const loadReleasesSoon = debounce(loadReleases, 900);
 
 function renderPlaylists() {
   const html = playlists.map((p) => `
-    <div class="row pl">
+    <div class="row pl" data-pl="${esc(p.url)}">
       ${p.cover ? `<img class="pl-cover" src="${esc(p.cover)}" alt="">` : '<span class="pl-cover"></span>'}
       <span class="lines"><b>${esc(p.title)}</b><span>${plural(p.count || 0, "artiste")}</span></span>
       <button class="x" data-unfollow="${esc(p.url)}" aria-label="Retirer la playlist">${ICON_X}</button>
@@ -421,7 +421,7 @@ async function importPlaylist(input) {
   if (!url) throw new Error("Colle un lien de playlist Apple Music");
   const res = await api("playlist", { url });
   const added = addArtists(res.artists);
-  const entry = { url, title: res.title.replace(/ sur Apple Music$/, ""), count: res.artists.length, cover: res.image || null };
+  const entry = { url, title: res.title.replace(/\s+sur\s+Apple\s+Music$/, ""), count: res.artists.length, cover: res.image || null };
   playlists = [entry, ...playlists.filter((p) => p.url !== url)];
   renderPlaylists();
   saveAll();
@@ -461,6 +461,65 @@ async function refreshPlaylists() {
   if (added) toast(`${added} nouvel${added > 1 ? "s" : ""} artiste${added > 1 ? "s" : ""} depuis tes playlists`);
   return added;
 }
+
+// ---------- Playlist ouverte : tous ses titres par date de sortie ----------
+
+let plTracks = [];
+let plOrder = "desc";
+
+function renderPlTracks() {
+  const byDate = (a, b) => (plOrder === "desc" ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date));
+  const sorted = [...plTracks].sort((a, b) => (!a.date ? 1 : !b.date ? -1 : byDate(a, b)));
+  $("#pl-tracks").innerHTML = sorted.map((t) => `
+    <li>
+      <button class="main" data-url="${esc(t.url || "")}">
+        <img class="cover" src="${esc(t.artwork || "")}" alt="" loading="lazy">
+        <span class="lines"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></span>
+        <span class="date">${t.date ? shortDate(t.date) : ""}</span>
+      </button>
+    </li>`).join("");
+}
+
+async function openPlaylist(url) {
+  const p = playlists.find((x) => x.url === url);
+  if (!p) return;
+  const hero = $("#pl-hero");
+  if (p.cover) hero.src = p.cover; else hero.removeAttribute("src");
+  $("#pl-name").textContent = p.title;
+  $("#pl-sub").textContent = "Chargement des titres…";
+  $("#pl-tracks").innerHTML = '<li class="skeleton"></li>'.repeat(6);
+  $("#pl-scroller").scrollTop = 0;
+  $("#plsheet").hidden = false;
+  try {
+    const res = await api("playlist", { url });
+    const dates = await trackDates(res.tracks.map((t) => t.id), config.country).catch(() => ({}));
+    if ($("#plsheet").hidden) return;
+    plTracks = res.tracks.map((t) => ({ ...t, date: dates[t.id] || null }));
+    if (res.image) hero.src = res.image;
+    $("#pl-sub").textContent = `${plural(plTracks.length, "titre")} · ${plural(res.artists.length, "artiste")}`;
+    renderPlTracks();
+  } catch (e) {
+    $("#pl-sub").textContent = "";
+    $("#pl-tracks").innerHTML = `<li><span class="empty" style="padding:16px">${esc(e.message)}</span></li>`;
+  }
+}
+
+$("#pl-close").addEventListener("click", () => { $("#plsheet").hidden = true; });
+$("#pl-order").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-order]");
+  if (!b || b.dataset.order === plOrder) return;
+  plOrder = b.dataset.order;
+  $("#pl-order").querySelectorAll("button").forEach((x) => {
+    x.classList.toggle("on", x === b);
+    x.setAttribute("aria-checked", String(x === b));
+  });
+  renderPlTracks();
+  $("#pl-scroller").scrollTop = 0;
+});
+$("#pl-tracks").addEventListener("click", (e) => {
+  const url = e.target.closest("[data-url]")?.dataset.url;
+  if (url) openInMusic(url);
+});
 
 // ---------- Notifications ----------
 
@@ -634,7 +693,11 @@ async function onUnfollowClick(e) {
   renderPlaylists();
   saveAll();
 }
-$("#playlists").addEventListener("click", onUnfollowClick);
+$("#playlists").addEventListener("click", (e) => {
+  if (e.target.closest("[data-unfollow]")) return onUnfollowClick(e);
+  const url = e.target.closest("[data-pl]")?.dataset.pl;
+  if (url) openPlaylist(url);
+});
 $("#ob-playlists").addEventListener("click", onUnfollowClick);
 
 // Photo absente : on garde l'initiale

@@ -78,9 +78,21 @@ export function parsePlaylistPage(html) {
   const m = html.match(/<script[^>]*id="serialized-server-data"[^>]*>([\s\S]*?)<\/script>/);
   if (!m) return null;
   const artists = new Map();
+  const tracks = new Map();
   const walk = (node) => {
     if (Array.isArray(node)) { for (const x of node) walk(x); return; }
     if (!node || typeof node !== "object") return;
+    const song = node.contentDescriptor?.kind === "song" && node.contentDescriptor.identifiers?.storeAdamID;
+    if (song && node.title && !tracks.has(String(song))) {
+      const art = node.artwork?.dictionary?.url;
+      tracks.set(String(song), {
+        id: String(song),
+        title: node.title,
+        artist: node.artistName || (node.subtitleLinks || []).map((l) => l.title).join(", "),
+        url: node.contentDescriptor.url || null,
+        artwork: art ? art.replace(/\{w\}x\{h\}(\{c\}|bb|cc)?\.\{f\}/, "200x200bb.jpg") : null,
+      });
+    }
     if (Array.isArray(node.subtitleLinks)) {
       for (const link of node.subtitleLinks) {
         const d = link?.segue?.destination?.contentDescriptor;
@@ -92,8 +104,8 @@ export function parsePlaylistPage(html) {
   };
   walk(JSON.parse(m[1]));
   const title = (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "Playlist")
-    .replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/ sur Apple Music$/, "");
-  return { title, image: coverFrom(html), artists: [...artists.values()] };
+    .replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+sur\s+Apple\s+Music$/, "");
+  return { title, image: coverFrom(html), artists: [...artists.values()], tracks: [...tracks.values()] };
 }
 
 /** Couverture carrée d'une page music.apple.com (à partir de son image de partage). */
@@ -120,8 +132,18 @@ export function parseArtistPage(html) {
   const image = template
     ? template.replace("{w}x{h}{c}.{f}", "400x400cc.jpg")
     : og && /AMCArtistImages|\/Music\d*\//.test(og) ? og.replace(/\/[^/]+$/, "/400x400cc.jpg") : null;
-  const name = header?.title || (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "").replace(/ sur Apple Music$/, "");
+  const name = header?.title || (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "").replace(/\s+sur\s+Apple\s+Music$/, "");
   return { name, image, bio: (header?.bio || "").trim() };
+}
+
+/** Dates de sortie de titres (identifiants Apple Music), par paquets de 150 : { id: "2017-06-30T12:00:00Z" } */
+export async function trackDates(ids, country = "fr") {
+  const dates = {};
+  for (const chunk of chunks([...new Set(ids)], 150)) {
+    const json = await getJSON(`${ITUNES}/lookup?id=${chunk.join(",")}&country=${country}`);
+    for (const r of json.results || []) if (r.trackId && r.releaseDate) dates[String(r.trackId)] = r.releaseDate;
+  }
+  return dates;
 }
 
 /** Discographie complète d'un artiste (ses propres sorties, sans ses apparitions), la plus récente d'abord. */

@@ -13,7 +13,7 @@
 <link rel="manifest" href="/manifest.webmanifest?v=3">
 <link rel="icon" type="image/png" href="/icons/favicon.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
-<link rel="stylesheet" href="/style.css?v=8">
+<link rel="stylesheet" href="/style.css?v=9">
 </head>
 <body>
 <!-- bande pleine sous l'heure et la batterie : rien ne défile dessous, donc pas de flou -->
@@ -113,6 +113,27 @@
   </div>
 </div>
 
+<!-- Playlist : tous ses titres, par date de sortie -->
+<div class="sheet" id="plsheet" hidden role="dialog" aria-modal="true" aria-labelledby="pl-name">
+  <div class="sheet-bar">
+    <button class="close" id="pl-close" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
+  </div>
+  <div class="sheet-view">
+    <div class="scroller" id="pl-scroller">
+      <div class="profile">
+        <img class="pl-hero" id="pl-hero" alt="">
+        <h1 id="pl-name"></h1>
+        <p class="sub" id="pl-sub"></p>
+      </div>
+      <div class="seg" id="pl-order" role="radiogroup" aria-label="Ordre">
+        <button class="on" data-order="desc" role="radio" aria-checked="true">Plus récents</button>
+        <button data-order="asc" role="radio" aria-checked="false">Plus anciens</button>
+      </div>
+      <ul class="list" id="pl-tracks"></ul>
+    </div>
+  </div>
+</div>
+
 <!-- Premier lancement : la playlist puis les notifications -->
 <div class="onboard" id="onboard" hidden>
   <div class="scroller">
@@ -153,6 +174,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=7" type="module"></script>
+<script src="/app.js?v=9" type="module"></script>
 </body>
 </html>
