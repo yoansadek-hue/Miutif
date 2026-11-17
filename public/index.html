@@ -13,7 +13,7 @@
 <link rel="manifest" href="/manifest.webmanifest?v=2">
 <link rel="icon" type="image/png" href="/icons/favicon.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
-<link rel="stylesheet" href="/style.css?v=4">
+<link rel="stylesheet" href="/style.css?v=5">
 </head>
 <body>
 <!-- bande pleine sous l'heure et la batterie : rien ne défile dessous, donc pas de flou -->
@@ -60,7 +60,6 @@
         <div class="row"><span>Tous les jours à</span><span class="value" id="notif-time">11:00</span></div>
         <div class="row"><span>Sur ce téléphone</span><span class="value" id="notif-state">Désactivées</span></div>
         <button class="row action" id="enable">Activer les notifications</button>
-        <button class="row action" id="test" hidden>Envoyer une notification de test</button>
       </div>
       <p class="group-foot">Une seule notification par jour avec toutes les nouvelles sorties de tes artistes.</p>
 
@@ -107,10 +106,34 @@
         <h1 id="sheet-name"></h1>
         <button class="pill-btn" id="sheet-open">Ouvrir dans Apple Music</button>
       </div>
-      <h2 class="group-title">Biographie</h2>
-      <div class="bio" id="sheet-bio"></div>
-      <h2 class="group-title">Dernières sorties</h2>
-      <ul class="list" id="sheet-releases"></ul>
+      <div id="sheet-disco"><p class="empty">Chargement…</p></div>
+    </div>
+  </div>
+</div>
+
+<!-- Premier lancement : la playlist puis les notifications -->
+<div class="onboard" id="onboard" hidden>
+  <div class="scroller">
+    <div class="ob">
+      <img class="ob-logo" src="/icons/icon-192.png?v=2" alt="">
+      <h1>Bienvenue sur Miutif</h1>
+      <p class="sub">Chaque jour à 11 h, les nouvelles sorties des artistes de ta playlist.</p>
+
+      <h2 class="group-title">1 · Ta playlist Apple Music</h2>
+      <div class="group" id="ob-playlists"></div>
+      <div class="group" id="ob-form">
+        <div class="row field-row">
+          <input id="ob-url" type="url" inputmode="url" placeholder="Lien de la playlist" autocomplete="off">
+        </div>
+        <button class="row action" id="ob-add">Coller le lien</button>
+      </div>
+      <p class="group-foot">Dans Apple Music : ouvre ta playlist › ••• › Partager › Copier le lien.</p>
+
+      <h2 class="group-title">2 · Notifications</h2>
+      <div class="group"><button class="row action" id="ob-notif">Activer les notifications</button></div>
+      <p class="group-foot" id="ob-notif-foot">Une seule notification par jour, à 11 h.</p>
+
+      <button class="start" id="ob-start" disabled>Commencer</button>
     </div>
   </div>
 </div>
@@ -128,6 +151,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=4" type="module"></script>
+<script src="/app.js?v=5" type="module"></script>
 </body>
 </html>

@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { createECDH, randomBytes } from "node:crypto";
 import worker from "../src/worker.js";
 import { b64url } from "../src/push.js";
-import { searchArtists, recentReleases } from "../public/music.js";
+import { searchArtists, recentReleases, discography } from "../public/music.js";
 
 const ece = createRequire(import.meta.url)("http_ece");
 let failed = 0;
@@ -49,18 +49,18 @@ globalThis.fetch = async (url, init = {}) => {
   if (url.startsWith("https://itunes.apple.com/lookup")) {
     return Response.json({ results: [
       { wrapperType: "artist", artistId: 111 },
-      { wrapperType: "collection", collectionId: 1, artistName: "Artiste A", collectionName: "Neuf - Single", releaseDate: day(1), collectionViewUrl: "https://music.apple.com/fr/album/neuf/1?uo=4", artworkUrl100: "https://x/100x100bb.jpg" },
-      { wrapperType: "collection", collectionId: 9, artistName: "Artiste A", collectionName: "Neuf - Single", releaseDate: day(1.5), collectionViewUrl: "https://music.apple.com/fr/album/neuf/9" },
-      { wrapperType: "collection", collectionId: 2, artistName: "Artiste A", collectionName: "Vieux", releaseDate: day(40), collectionViewUrl: "https://music.apple.com/fr/album/vieux/2" },
-      { wrapperType: "collection", collectionId: 3, artistName: "Artiste A", collectionName: "Futur", releaseDate: day(-5), collectionViewUrl: "https://music.apple.com/fr/album/futur/3" },
+      { wrapperType: "collection", collectionId: 1, artistId: 111, artistName: "Artiste A", collectionName: "Neuf - Single", releaseDate: day(1), collectionViewUrl: "https://music.apple.com/fr/album/neuf/1?uo=4", artworkUrl100: "https://x/100x100bb.jpg" },
+      { wrapperType: "collection", collectionId: 9, artistId: 111, artistName: "Artiste A", collectionName: "Neuf - Single", releaseDate: day(1.5), collectionViewUrl: "https://music.apple.com/fr/album/neuf/9" },
+      { wrapperType: "collection", collectionId: 2, artistId: 111, artistName: "Artiste A", collectionName: "Vieux", releaseDate: day(40), collectionViewUrl: "https://music.apple.com/fr/album/vieux/2" },
+      { wrapperType: "collection", collectionId: 3, artistId: 111, artistName: "Artiste A", collectionName: "Futur", releaseDate: day(-5), collectionViewUrl: "https://music.apple.com/fr/album/futur/3" },
       { wrapperType: "artist", artistId: 222 },
-      { wrapperType: "collection", collectionId: 4, artistName: "Artiste B", collectionName: "Album B", releaseDate: day(3), collectionViewUrl: "https://music.apple.com/fr/album/b/4" },
+      { wrapperType: "collection", collectionId: 4, artistId: 222, artistName: "Artiste B", collectionName: "Album B", releaseDate: day(3), collectionViewUrl: "https://music.apple.com/fr/album/b/4" },
     ] });
   }
   if (url.startsWith("https://music.apple.com/") && url.includes("/playlist/")) {
     if (!url.includes("pl.ok")) return new Response("introuvable", { status: 404 });
     const data = { data: [{ sections: [{ items: playlistArtists.map(([id, n], i) => ({ title: `Titre ${i}`, subtitleLinks: [link(id, n), link("111", "Artiste A")] })) }] }] };
-    return new Response(`<meta property="og:title" content="Ma playlist &amp; moi"><script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script>`);
+    return new Response(`<meta property="og:title" content="Ma playlist &amp; moi sur Apple Music"><meta property="og:image" content="https://is1-ssl.mzstatic.com/image/thumb/Features/x/y.png/1200x630SC.DN01.jpg?l=fr-FR"><script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script>`);
   }
   if (url.startsWith("https://music.apple.com/") && url.includes("/artist/")) {
     artistFetches++;
@@ -104,6 +104,9 @@ const rel = await recentReleases(["111", "222"]);
 check(JSON.stringify(rel.map((x) => x.id)) === JSON.stringify(["1", "4"]), "sorties : récentes uniquement, sans futur ni > 30 jours, sans doublon de fiche");
 check(rel[0].kind === "Single" && rel[0].title === "Neuf" && rel[0].artistId === "111", "sorties : « - Single » reconnu, artiste suivi noté");
 
+const disco = await discography("111");
+check(JSON.stringify(disco.map((r) => r.id)) === JSON.stringify(["1", "2"]), "discographie : ses sorties parues (sans doublon, sans le futur, sans les autres artistes), la plus récente d'abord");
+
 // --- Fiches artistes
 const fiche = await call("GET", "/api/artist/111");
 check(fiche.data.name === "Artiste A" && fiche.data.bio.startsWith("Né à Paris") && fiche.data.image.endsWith("/400x400cc.jpg"), "fiche artiste : nom, biographie et photo carrée");
@@ -114,6 +117,7 @@ check((await call("GET", "/api/artist/999/photo")).status === 404, "photo absent
 // --- Playlist
 const pl = await call("POST", "/api/playlist", { url: "Écoute https://music.apple.com/fr/playlist/ma-playlist/pl.ok?ls=1" });
 check(pl.status === 200 && pl.data.title === "Ma playlist & moi" && pl.data.artists.length === 3, "playlist : lien partagé lu, chaque artiste une seule fois");
+check(pl.data.image === "https://is1-ssl.mzstatic.com/image/thumb/Features/x/y.png/300x300bb.jpg", "playlist : couverture carrée récupérée");
 check((await call("POST", "/api/playlist", { url: "https://music.apple.com/fr/playlist/x/pl.absente" })).status === 404, "playlist : non partagée → message clair");
 check((await call("POST", "/api/playlist", { url: "https://exemple.com/fr/playlist/x" })).status === 400, "playlist : autre site refusé");
 
@@ -126,12 +130,13 @@ check((await call("POST", "/api/sync", { id: "x", artists: [] })).status === 400
 const sy = await call("POST", "/api/sync", {
   id, tz: "Europe/Paris", subscription: phone("paris"),
   artists: [{ id: "111", name: "Artiste A" }, { id: "222", name: "Artiste B" }, { id: "111", name: "doublon" }, { id: "abc", name: "faux" }],
-  playlists: [{ url: "https://music.apple.com/fr/playlist/ma-playlist/pl.ok", title: "Ma playlist", count: 3 }, { url: "https://exemple.com/x", title: "faux" }],
+  playlists: [{ url: "https://music.apple.com/fr/playlist/ma-playlist/pl.ok", title: "Ma playlist", count: 3, cover: "javascript:alert(1)" }, { url: "https://exemple.com/x", title: "faux" }],
   excluded: ["444"],
 });
 check(sy.data.subscribed && sy.data.artists === 2, "sync : abonnement gardé, doublons et faux identifiants ignorés");
 const saved = (await call("GET", `/api/user?id=${id}`)).data;
 check(saved.artists.length === 2 && saved.playlists.length === 1 && saved.excluded[0] === "444", "user : artistes, playlists valides et artistes retirés récupérables");
+check(saved.playlists[0].cover === null, "sync : une couverture qui ne vient pas d'Apple est refusée");
 
 const tokyo = "tokyo0123456789abcdef";
 await call("POST", "/api/sync", { id: tokyo, tz: "Asia/Tokyo", artists: [{ id: "111", name: "A" }, { id: "333", name: "C" }], subscription: phone("tokyo") });
@@ -143,6 +148,7 @@ playlistArtists = [...playlistArtists, ["555", "Artiste E"]];
 await runCron("2026-11-18T09:00:00Z"); // 10:00 à Paris
 const ids = user(id).artists.map((a) => a.id);
 check(ids.includes("555") && !ids.includes("444"), "10 h : nouvel artiste de la playlist ajouté, artiste retiré à la main pas rajouté");
+check(user(id).playlists[0].cover?.endsWith("/300x300bb.jpg") && user(id).playlists[0].title === "Ma playlist & moi", "10 h : couverture et titre de la playlist mis à jour");
 check(pushes.length === 0 && robotReads === 0, "10 h : aucune notification");
 
 // Le robot publie son fichier (comme le ferait GitHub Actions à 10 h 50)
@@ -164,14 +170,12 @@ const tk = pushes.at(-1);
 check(pushes.length === 2 && tk.url.endsWith("/tokyo") && tk.payload.title === "Nouveau single de Artiste A" && tk.payload.url === "https://music.apple.com/fr/album/neuf/1",
   "1 seule sortie : la notif ouvre directement Apple Music (fuseau de Tokyo respecté)");
 
-const t = await call("POST", "/api/test", { id });
-check(t.data.ok && pushes.length === 3 && pushes[2].payload.title.startsWith("Test · 2 nouvelles sorties"), "bouton test : même récap que celui de 11 h");
-check((await call("POST", "/api/test", { id })).status === 429, "bouton test : pas de rafale");
+check((await call("POST", "/api/test", { id })).status === 404, "version finale : plus de notification de test");
 
 robotFile = null;
 kv.set(`u:${id}`, JSON.stringify({ ...user(id), notified: {}, lastRun: null }));
 await runCron("2026-11-20T10:00:00Z");
-check(pushes.length === 3 && user(id).lastRun === null, "fichier du robot absent : rien d'envoyé, on réessaiera");
+check(pushes.length === 2 && user(id).lastRun === null, "fichier du robot absent : rien d'envoyé, on réessaiera");
 
 pushStatus = 410;
 robotFile = { byCountry: { fr: [{ ...rel[0], date: day(0.1) }] } };

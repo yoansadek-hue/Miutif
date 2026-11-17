@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, recentReleases, playlistUrl } from "./music.js?v=4";
+import { searchArtists, recentReleases, playlistUrl, discography } from "./music.js?v=5";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -188,28 +188,37 @@ function renderResults() {
 
 // ---------- Fiche artiste ----------
 
+const shortDate = (iso) => new Date(iso).toLocaleDateString("fr-FR", { day: "numeric", month: "short", year: "numeric" });
+const discoRow = (r) => `
+  <li>
+    <button class="main" data-url="${esc(r.url)}">
+      <img class="cover" src="${esc(r.artwork)}" alt="" loading="lazy">
+      <span class="lines"><b>${esc(r.title)}</b><span>${esc(r.kind)}</span></span>
+      <span class="date">${shortDate(r.date)}</span>
+    </button>
+  </li>`;
+
 async function openArtist(id, fallbackName = "") {
   const name = artists.find((a) => a.id === id)?.name || fallbackName;
   $("#sheet-name").textContent = name;
   $("#sheet-avatar").innerHTML = `${initial(name)}<img src="${photo(id)}" alt="">`;
-  $("#sheet-bio").innerHTML = '<p class="empty">Chargement…</p>';
-  $("#sheet-releases").innerHTML = "";
+  $("#sheet-disco").innerHTML = '<p class="empty">Chargement de la discographie…</p>';
   $("#sheet-open").onclick = () => openInMusic(`https://music.apple.com/${config.country}/artist/${id}`);
   $("#sheet-scroller").scrollTop = 0;
   $("#sheet").hidden = false;
 
-  const [info, recent] = await Promise.allSettled([
-    api(`artist/${id}`),
-    recentReleases([id], { country: config.country, days: 3650 }),
-  ]);
+  let list = [];
+  try { list = await discography(id, config.country); } catch {}
   if ($("#sheet").hidden) return;
-  const bio = info.status === "fulfilled" ? info.value.bio : "";
-  if (info.status === "fulfilled" && info.value.name && !name) $("#sheet-name").textContent = info.value.name;
-  $("#sheet-bio").innerHTML = bio
-    ? bio.split(/\n+/).filter(Boolean).map((p) => `<p>${esc(p)}</p>`).join("")
-    : '<p class="empty">Apple Music ne propose pas de biographie pour cet artiste.</p>';
-  const list = recent.status === "fulfilled" ? recent.value.slice(0, 8) : [];
-  $("#sheet-releases").innerHTML = list.map(releaseRow).join("") || "";
+  if (!list.length) { $("#sheet-disco").innerHTML = '<p class="empty">Discographie indisponible pour le moment.</p>'; return; }
+  const albums = list.filter((r) => r.kind === "Album");
+  const singles = list.filter((r) => r.kind !== "Album");
+  const section = (title, items) => items.length
+    ? `<h2 class="group-title">${title}</h2><ul class="list">${items.map(discoRow).join("")}</ul>` : "";
+  $("#sheet-disco").innerHTML =
+    section("Dernières sorties", list.slice(0, 5)) +
+    section(`Albums · ${albums.length}`, albums) +
+    section(`Singles et EP · ${singles.length}`, singles);
 }
 
 // ---------- Nouveautés ----------
@@ -281,11 +290,16 @@ const loadReleasesSoon = debounce(loadReleases, 900);
 // ---------- Playlists ----------
 
 function renderPlaylists() {
-  $("#playlists").innerHTML = playlists.map((p) => `
+  const html = playlists.map((p) => `
     <div class="row pl">
+      ${p.cover ? `<img class="pl-cover" src="${esc(p.cover)}" alt="">` : '<span class="pl-cover"></span>'}
       <span class="lines"><b>${esc(p.title)}</b><span>${plural(p.count || 0, "artiste")}</span></span>
       <button class="x" data-unfollow="${esc(p.url)}" aria-label="Retirer la playlist">${ICON_X}</button>
     </div>`).join("");
+  $("#playlists").innerHTML = html;
+  $("#ob-playlists").innerHTML = html;
+  $("#ob-add").textContent = playlists.length ? "Ajouter une autre playlist" : "Coller le lien";
+  $("#ob-start").disabled = !playlists.length && !artists.length;
 }
 
 async function importPlaylist(input) {
@@ -293,32 +307,34 @@ async function importPlaylist(input) {
   if (!url) throw new Error("Colle un lien de playlist Apple Music");
   const res = await api("playlist", { url });
   const added = addArtists(res.artists);
-  const entry = { url, title: res.title.replace(/ sur Apple Music$/, ""), count: res.artists.length };
+  const entry = { url, title: res.title.replace(/ sur Apple Music$/, ""), count: res.artists.length, cover: res.image || null };
   playlists = [entry, ...playlists.filter((p) => p.url !== url)];
   renderPlaylists();
   saveAll();
   return { added, ...entry };
 }
 
-async function addPlaylistFromField() {
-  const btn = $("#pl-add");
-  let value = $("#pl-url").value.trim();
+async function addPlaylistFromField(inputSel = "#pl-url", btnSel = "#pl-add") {
+  const btn = $(btnSel);
+  const label = btn.textContent;
+  let value = $(inputSel).value.trim();
   if (!value) {
     try { value = await navigator.clipboard.readText(); } catch {}
   }
-  if (!value) { $("#pl-url").focus(); toast("Colle le lien dans le champ"); return; }
+  if (!value) { $(inputSel).focus(); toast("Colle le lien dans le champ"); return; }
   btn.disabled = true;
   btn.textContent = "Ajout…";
   try {
     const r = await importPlaylist(value);
-    $("#pl-url").value = "";
+    $(inputSel).value = "";
     toast(r.added ? `${plural(r.added, "artiste")} ajouté${r.added > 1 ? "s" : ""}` : "Playlist ajoutée");
     loadReleasesSoon();
   } catch (e) {
     toast(e.message);
   } finally {
     btn.disabled = false;
-    btn.textContent = "Coller le lien et ajouter";
+    btn.textContent = label;
+    renderPlaylists();
   }
 }
 
@@ -345,7 +361,7 @@ async function renderNotifState() {
   const sub = await currentSubscription();
   const on = !!sub && Notification.permission === "granted";
   $("#enable").hidden = on;
-  $("#test").hidden = !on;
+  renderOnboardNotif(on);
   $("#notif-state").textContent = on ? "Activées"
     : pushSupported && Notification.permission === "denied" ? "Refusées (Réglages iPhone)"
     : isIOS && !standalone ? "Depuis l'écran d'accueil"
@@ -377,17 +393,26 @@ async function enableNotifications() {
   }
 }
 
-async function sendTest() {
-  const btn = $("#test");
-  btn.disabled = true;
-  try {
-    await api("test", { id: userId });
-    toast("Notification envoyée");
-  } catch (e) {
-    toast(e.message);
-  } finally {
-    setTimeout(() => { btn.disabled = false; }, 3000);
-  }
+// ---------- Premier lancement ----------
+
+function renderOnboardNotif(on) {
+  const b = $("#ob-notif");
+  b.classList.toggle("done", on);
+  b.disabled = on || (isIOS && !standalone);
+  b.textContent = on ? "Notifications activées ✓"
+    : isIOS && !standalone ? "Ajoute d'abord Miutif à l'écran d'accueil" : "Activer les notifications";
+  $("#ob-notif-foot").textContent = isIOS && !standalone && !on
+    ? "Dans Safari : Partager › Sur l'écran d'accueil, puis ouvre Miutif depuis son icône."
+    : "Une seule notification par jour, à 11 h.";
+}
+
+/** Affiché tout de suite au lancement tant que l'app n'est pas prête (playlist + notifications). */
+function maybeOnboard() {
+  const granted = pushSupported && Notification.permission === "granted";
+  if ((playlists.length && granted) || store.get("onboarded")) return;
+  renderPlaylists();
+  renderOnboardNotif(false);
+  $("#onboard").hidden = false;
 }
 
 // ---------- Apple Music (facultatif, avec une clé MusicKit côté serveur) ----------
@@ -430,10 +455,18 @@ async function importAppleMusic() {
 
 document.querySelectorAll(".tab").forEach((b) => b.addEventListener("click", () => showTab(b.dataset.tab)));
 $("#enable").addEventListener("click", enableNotifications);
-$("#test").addEventListener("click", sendTest);
 $("#am-import").addEventListener("click", importAppleMusic);
-$("#pl-add").addEventListener("click", addPlaylistFromField);
+$("#pl-add").addEventListener("click", () => addPlaylistFromField());
 $("#pl-url").addEventListener("keydown", (e) => { if (e.key === "Enter") addPlaylistFromField(); });
+$("#ob-add").addEventListener("click", () => addPlaylistFromField("#ob-url", "#ob-add"));
+$("#ob-url").addEventListener("keydown", (e) => { if (e.key === "Enter") addPlaylistFromField("#ob-url", "#ob-add"); });
+$("#ob-notif").addEventListener("click", enableNotifications);
+$("#ob-start").addEventListener("click", () => {
+  store.set("onboarded", true);
+  $("#onboard").hidden = true;
+  showTab("new");
+  loadReleases();
+});
 $("#q").addEventListener("input", (e) => search(e.target.value.trim()));
 $("#sheet-close").addEventListener("click", () => { $("#sheet").hidden = true; });
 
@@ -454,20 +487,22 @@ $("#artists").addEventListener("click", (e) => {
   const open = e.target.closest("[data-open]")?.dataset.open;
   if (open) openArtist(open);
 });
-for (const sel of ["#news", "#sheet-releases"]) {
+for (const sel of ["#news", "#sheet-disco"]) {
   $(sel).addEventListener("click", (e) => {
     const url = e.target.closest("[data-url]")?.dataset.url;
     if (url) openInMusic(url);
   });
 }
-$("#playlists").addEventListener("click", async (e) => {
+async function onUnfollowClick(e) {
   const url = e.target.closest("[data-unfollow]")?.dataset.unfollow;
   if (!url) return;
   if (!(await confirmBox("Retirer cette playlist ?", "Ses artistes restent suivis, mais ses nouveaux artistes ne seront plus ajoutés.", "Retirer"))) return;
   playlists = playlists.filter((p) => p.url !== url);
   renderPlaylists();
   saveAll();
-});
+}
+$("#playlists").addEventListener("click", onUnfollowClick);
+$("#ob-playlists").addEventListener("click", onUnfollowClick);
 
 // Photo absente : on garde l'initiale
 document.addEventListener("error", (e) => {
@@ -505,6 +540,7 @@ async function start() {
   renderArtists();
   renderPlaylists();
   renderNews(); // tout de suite, depuis la dernière visite : pas d'écran de chargement
+  maybeOnboard();
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 

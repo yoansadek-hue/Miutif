@@ -1,15 +1,15 @@
 /* Miutif : une seule couleur, bleu marine, police système Apple. */
 :root {
-  --navy: #0b1b36;
-  --surface: #12264a;
-  --surface-press: #193159;
+  --navy: #040a16;
+  --surface: #0a1426;
+  --surface-press: #111e36;
   --line: rgba(255, 255, 255, 0.08);
   --text: #ffffff;
   --muted: rgba(255, 255, 255, 0.55);
   --faint: rgba(255, 255, 255, 0.35);
   --danger: #ff453a;
   --top: calc(env(safe-area-inset-top) + 8px);
-  --tabbar: calc(76px + env(safe-area-inset-bottom));
+  --tabbar: calc(64px + env(safe-area-inset-bottom));
   color-scheme: dark;
 }
 
@@ -146,7 +146,7 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 /* Barre d'onglets flottante (comme Quizly) */
 .tabbar {
   position: fixed; left: 0; right: 0; margin-inline: auto; z-index: 30;
-  bottom: max(12px, calc(env(safe-area-inset-bottom) - 8px));
+  bottom: max(6px, calc(env(safe-area-inset-bottom) - 24px));
   width: min(260px, calc(100% - 64px));
   display: grid; grid-template-columns: repeat(3, 1fr); padding: 6px;
   border-radius: 999px; background: var(--surface);
@@ -174,8 +174,21 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .profile { display: grid; justify-items: center; gap: 12px; padding: 24px 0 6px; text-align: center; }
 .profile h1 { font-size: 28px; }
 .pill-btn { padding: 10px 20px; border-radius: 999px; background: var(--text); color: var(--navy); font-weight: 600; font-size: 16px; }
-.bio { color: rgba(255, 255, 255, 0.85); font-size: 16px; line-height: 1.5; padding: 0 4px; -webkit-user-select: text; user-select: text; }
-.bio p + p { margin-top: 10px; }
+.date { flex: none; color: var(--muted); font-size: 14px; margin-right: 14px; font-variant-numeric: tabular-nums; }
+
+/* Playlists avec leur couverture */
+.pl-cover { flex: none; width: 48px; height: 48px; border-radius: 8px; object-fit: cover; background: var(--surface-press); }
+.pl { gap: 12px; }
+
+/* Premier lancement */
+.onboard { position: fixed; inset: 0; z-index: 45; background: var(--navy); }
+.onboard > .scroller { position: absolute; top: var(--top); left: 0; bottom: 0; }
+.ob { max-width: 520px; margin: 0 auto; padding: 28px 16px calc(env(safe-area-inset-bottom) + 28px); }
+.ob-logo { width: 72px; height: 72px; border-radius: 17px; margin-bottom: 18px; }
+.ob .sub { font-size: 17px; margin-top: 6px; }
+.start { display: block; width: 100%; height: 52px; margin-top: 28px; border-radius: 14px; background: var(--text); color: var(--navy); font-size: 17px; font-weight: 600; }
+.start:disabled { background: var(--surface); color: var(--faint); }
+.row.done { color: var(--muted); font-weight: 400; }
 
 /* Confirmation */
 .modal { position: fixed; inset: 0; z-index: 50; display: grid; place-items: center; padding: 24px; background: rgba(0, 0, 0, 0.45); animation: fade 0.15s ease; }

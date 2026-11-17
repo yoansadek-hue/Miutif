@@ -92,8 +92,14 @@ export function parsePlaylistPage(html) {
   };
   walk(JSON.parse(m[1]));
   const title = (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "Playlist")
-    .replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"');
-  return { title, artists: [...artists.values()] };
+    .replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/ sur Apple Music$/, "");
+  return { title, image: coverFrom(html), artists: [...artists.values()] };
+}
+
+/** Couverture carrée d'une page music.apple.com (à partir de son image de partage). */
+function coverFrom(html) {
+  const og = html.match(/<meta property="og:image" content="([^"]+)"/)?.[1];
+  return og && /^https:\/\/is\d-ssl\.mzstatic\.com\//.test(og) ? og.replace(/\?.*$/, "").replace(/\/[^/]+$/, "/300x300bb.jpg") : null;
 }
 
 /**
@@ -116,6 +122,19 @@ export function parseArtistPage(html) {
     : og && /AMCArtistImages|\/Music\d*\//.test(og) ? og.replace(/\/[^/]+$/, "/400x400cc.jpg") : null;
   const name = header?.title || (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "").replace(/ sur Apple Music$/, "");
   return { name, image, bio: (header?.bio || "").trim() };
+}
+
+/** Discographie complète d'un artiste (ses propres sorties, sans ses apparitions), la plus récente d'abord. */
+export async function discography(artistId, country = "fr") {
+  const id = String(artistId);
+  const json = await getJSON(`${ITUNES}/lookup?id=${id}&entity=album&sort=recent&limit=200&country=${country}`);
+  const seen = new Set();
+  return (json.results || [])
+    .filter((c) => c.wrapperType === "collection" && String(c.artistId) === id && c.collectionViewUrl && c.releaseDate)
+    .map((c) => toRelease(c, id))
+    .filter((r) => Date.parse(r.date) <= Date.now())
+    .sort((a, b) => b.date.localeCompare(a.date))
+    .filter((r) => { const k = r.title.toLowerCase(); return !seen.has(k) && seen.add(k); });
 }
 
 /** Sorties récentes des artistes donnés (une entrée par artiste suivi et par sortie si dedupe=false). */

@@ -113,24 +113,6 @@ async function api(request, url, env) {
       await env.DB.put(`u:${id}`, JSON.stringify(user));
       return json({ ok: true, subscribed: !!user.sub, artists: user.artists?.length || 0 });
     }
-
-    case "POST /api/test": {
-      const id = cleanUserId(body.id);
-      const user = id && (await env.DB.get(`u:${id}`, "json"));
-      if (!user?.sub) return json({ error: "Notifications pas encore activées sur ce téléphone" }, 400);
-      if (Date.now() - (user.lastTest || 0) < 15000) return json({ error: "Patiente quelques secondes" }, 429);
-      user.lastTest = Date.now();
-      await env.DB.put(`u:${id}`, JSON.stringify(user));
-
-      // Même notification que celle de 11 h, avec les sorties de la semaine
-      const data = await releaseData(env).catch(() => ({}));
-      const week = releasesFor(user, data, { days: NEW_DAYS, now: Date.now() });
-      const payload = week.length
-        ? { ...recapPayload(week, "test"), title: `Test · ${recapPayload(week, "test").title}` }
-        : { title: "Miutif", body: "Les notifications marchent ! Rendez-vous à 11 h.", url: "/", tag: "test" };
-      const status = await sendPush(user.sub, payload, await vapid(env));
-      return json({ ok: status < 300, status });
-    }
   }
   return json({ error: "Introuvable" }, 404);
 }
@@ -203,6 +185,8 @@ async function refreshPlaylists(env, key, user, day) {
       const parsed = res.ok && parsePlaylistPage(await res.text());
       if (!parsed) continue;
       p.count = parsed.artists.length;
+      p.title = parsed.title;
+      if (parsed.image) p.cover = parsed.image;
       for (const a of parsed.artists) {
         if (!known.has(a.id) && !excluded.has(a.id)) { known.add(a.id); user.artists.push(a); }
       }
@@ -291,7 +275,12 @@ const cleanArtists = (list) => {
 const cleanPlaylists = (list) => {
   const seen = new Set();
   return list
-    .map((p) => ({ url: playlistUrl(p?.url), title: String(p?.title || "Playlist").slice(0, 120), count: Number(p?.count) || 0 }))
+    .map((p) => ({
+      url: playlistUrl(p?.url),
+      title: String(p?.title || "Playlist").slice(0, 120),
+      count: Number(p?.count) || 0,
+      cover: /^https:\/\/is\d-ssl\.mzstatic\.com\/[^\s"']+$/.test(p?.cover || "") ? p.cover : null,
+    }))
     .filter((p) => p.url && !seen.has(p.url) && seen.add(p.url))
     .slice(0, MAX_PLAYLISTS);
 };
