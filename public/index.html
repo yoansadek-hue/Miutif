@@ -113,7 +113,7 @@
   </div>
 </div>
 
-<!-- Playlist : tous ses titres, par date de sortie -->
+<!-- Playlist : ses titres dans l'ordre d'ajout -->
 <div class="sheet" id="plsheet" hidden role="dialog" aria-modal="true" aria-labelledby="pl-name">
   <div class="sheet-bar">
     <button class="close" id="pl-close" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
@@ -126,8 +126,8 @@
         <p class="sub" id="pl-sub"></p>
       </div>
       <div class="seg" id="pl-order" role="radiogroup" aria-label="Ordre">
-        <button class="on" data-order="desc" role="radio" aria-checked="true">Plus récents</button>
-        <button data-order="asc" role="radio" aria-checked="false">Plus anciens</button>
+        <button class="on" data-order="desc" role="radio" aria-checked="true">Derniers ajouts</button>
+        <button data-order="asc" role="radio" aria-checked="false">Premiers ajouts</button>
       </div>
       <ul class="list" id="pl-tracks"></ul>
     </div>
@@ -174,6 +174,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=9" type="module"></script>
+<script src="/app.js?v=10" type="module"></script>
 </body>
 </html>

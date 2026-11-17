@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, recentReleases, playlistUrl, discography, trackDates } from "./music.js?v=7";
+import { searchArtists, recentReleases, playlistUrl, discography } from "./music.js?v=8";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -462,20 +462,20 @@ async function refreshPlaylists() {
   return added;
 }
 
-// ---------- Playlist ouverte : tous ses titres par date de sortie ----------
+// ---------- Playlist ouverte : ses titres dans l'ordre d'ajout ----------
+// Apple garde les titres d'une playlist dans l'ordre où ils ont été ajoutés (le dernier ajouté en bas).
 
 let plTracks = [];
 let plOrder = "desc";
 
 function renderPlTracks() {
-  const byDate = (a, b) => (plOrder === "desc" ? b.date.localeCompare(a.date) : a.date.localeCompare(b.date));
-  const sorted = [...plTracks].sort((a, b) => (!a.date ? 1 : !b.date ? -1 : byDate(a, b)));
+  const sorted = plOrder === "desc" ? [...plTracks].reverse() : plTracks;
   $("#pl-tracks").innerHTML = sorted.map((t) => `
     <li>
       <button class="main" data-url="${esc(t.url || "")}">
         <img class="cover" src="${esc(t.artwork || "")}" alt="" loading="lazy">
         <span class="lines"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></span>
-        <span class="date">${t.date ? shortDate(t.date) : ""}</span>
+        <span class="date">${t.pos + 1}</span>
       </button>
     </li>`).join("");
 }
@@ -492,9 +492,8 @@ async function openPlaylist(url) {
   $("#plsheet").hidden = false;
   try {
     const res = await api("playlist", { url });
-    const dates = await trackDates(res.tracks.map((t) => t.id), config.country).catch(() => ({}));
     if ($("#plsheet").hidden) return;
-    plTracks = res.tracks.map((t) => ({ ...t, date: dates[t.id] || null }));
+    plTracks = res.tracks.map((t, i) => ({ ...t, pos: i }));
     if (res.image) hero.src = res.image;
     $("#pl-sub").textContent = `${plural(plTracks.length, "titre")} · ${plural(res.artists.length, "artiste")}`;
     renderPlTracks();
