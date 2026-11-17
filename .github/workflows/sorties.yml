@@ -5,9 +5,14 @@ name: Sorties
 
 on:
   schedule:
-    # Passage principal à 10 h 50 (heure de Paris) pour que la notif de 11 h parte à l'heure :
-    # 09:50 UTC en hiver, 08:50 UTC en été. GitHub peut retarder ses tâches planifiées de
-    # quelques minutes, d'où les passages de secours à 10 h 20 et 10 h 35, plus un passage toutes les heures.
+    # Recherche des nouveautés (heure de Paris ; les horaires GitHub sont en UTC : Paris = UTC+1 l'hiver, UTC+2 l'été) :
+    #   · minuit   → 23:00 UTC l'hiver, 22:00 UTC l'été  (les sorties du jour sont publiées à minuit)
+    #   · 6 h      → 05:00 UTC l'hiver, 04:00 UTC l'été
+    #   · 10 h 50  → 09:50 UTC l'hiver, 08:50 UTC l'été  (juste avant la notification de 11 h)
+    # GitHub peut retarder une tâche planifiée de quelques minutes : passages de secours à 10 h 20 et 10 h 35,
+    # et un passage toutes les heures pour les artistes ajoutés dans la journée.
+    - cron: "0 22,23 * * *"
+    - cron: "0 4,5 * * *"
     - cron: "50 8,9 * * *"
     - cron: "20,35 8,9 * * *"
     - cron: "5 * * * *"

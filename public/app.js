@@ -92,18 +92,29 @@ function saveAll() {
 
 const TABS = ["artists", "new", "settings"];
 let current = null;
-const scrollPos = {};
 
+/** Chaque onglet a sa propre zone de défilement : passer de l'un à l'autre ne change pas leur position. */
 function showTab(tab) {
   if (!TABS.includes(tab)) tab = "new";
-  const scroller = $("#scroller");
-  if (current) scrollPos[current] = scroller.scrollTop;
   const first = current === null;
   current = tab;
-  for (const t of TABS) $(`#tab-${t}`).hidden = t !== tab;
+  for (const t of TABS) $(`#scroll-${t}`).classList.toggle("off", t !== tab);
   BTNS.forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   pillTo(BTNS.find((b) => b.dataset.tab === tab), !first);
-  scroller.scrollTop = scrollPos[tab] || 0;
+}
+
+/**
+ * Appui sur un onglet de la barre. Une fiche artiste ouverte se ferme (on revient à la liste).
+ * Appui sur l'onglet déjà ouvert : la page remonte tout en haut.
+ */
+function tapTab(tab) {
+  const sheetOpen = !$("#sheet").hidden;
+  if (sheetOpen) closeSheet();
+  if (tab === current) {
+    if (!sheetOpen) $(`#scroll-${tab}`).scrollTo({ top: 0, behavior: reduced() ? "auto" : "smooth" });
+    return;
+  }
+  showTab(tab);
 }
 
 // ---------- Barre d'onglets : on peut y glisser le doigt (comme Quizly) ----------
@@ -210,7 +221,8 @@ function dragEnd(e, cancel) {
   bar.style.scale = ""; // la barre reprend sa taille avec un rebond
   if (t) {
     if (!d.moved && !t.classList.contains("on")) haptic();
-    showTab(t.dataset.tab); // la bulle part de là où le doigt l'a laissée
+    tapTab(t.dataset.tab); // la bulle part de là où le doigt l'a laissée
+    if (t.dataset.tab === current) pillTo(t, true);
   } else {
     pillTo(BTNS.find((b) => b.classList.contains("on")), true);
   }
@@ -636,7 +648,7 @@ async function importAppleMusic() {
 
 // ---------- Événements ----------
 
-BTNS.forEach((b) => b.addEventListener("click", (e) => { if (e.detail === 0) showTab(b.dataset.tab); }));
+BTNS.forEach((b) => b.addEventListener("click", (e) => { if (e.detail === 0) tapTab(b.dataset.tab); }));
 $("#notif-switch").addEventListener("change", (e) => (e.target.checked ? enableNotifications() : disableNotifications()));
 $("#am-import").addEventListener("click", importAppleMusic);
 $("#pl-add").addEventListener("click", () => addPlaylistFromField());

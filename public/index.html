@@ -13,17 +13,17 @@
 <link rel="manifest" href="/manifest.webmanifest?v=3">
 <link rel="icon" type="image/png" href="/icons/favicon.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
-<link rel="stylesheet" href="/style.css?v=13">
+<link rel="stylesheet" href="/style.css?v=14">
 </head>
 <body>
 <!-- bande pleine sous l'heure et la batterie : rien ne défile dessous, donc pas de flou -->
 <div class="statusbar" aria-hidden="true"></div>
 
 <main class="viewport">
-  <div class="scroller" id="scroller">
 
     <!-- ===== Artistes ===== -->
-    <section class="page" id="tab-artists" hidden>
+    <div class="scroller tab-scroller off" id="scroll-artists">
+    <section class="page" id="tab-artists">
       <header class="head">
         <h1>Artistes</h1>
         <p class="sub" id="artists-count">Aucun artiste</p>
@@ -36,9 +36,11 @@
       <div id="artists"></div>
       <p class="empty" id="artists-empty">Ajoute une playlist dans Réglages, ou cherche un artiste ci-dessus.</p>
     </section>
+    </div>
 
     <!-- ===== Nouveautés ===== -->
-    <section class="page" id="tab-new" hidden>
+    <div class="scroller tab-scroller off" id="scroll-new">
+    <section class="page" id="tab-new">
       <header class="head">
         <h1>Nouveautés</h1>
         <p class="sub" id="new-sub">Les 30 derniers jours</p>
@@ -50,9 +52,11 @@
       <div id="news"></div>
       <p class="empty" id="news-empty" hidden>Aucune sortie ces 30 derniers jours pour tes artistes.</p>
     </section>
+    </div>
 
     <!-- ===== Réglages ===== -->
-    <section class="page" id="tab-settings" hidden>
+    <div class="scroller tab-scroller off" id="scroll-settings">
+    <section class="page" id="tab-settings">
       <header class="head"><h1>Réglages</h1></header>
 
       <h2 class="group-title">Notifications</h2>
@@ -80,8 +84,8 @@
         <button class="row action" id="am-import">Importer ma librairie Apple Music</button>
       </div>
     </section>
+    </div>
 
-  </div>
 </main>
 
 <nav class="tabbar" id="tabbar" aria-label="Onglets">
@@ -157,6 +161,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=14" type="module"></script>
+<script src="/app.js?v=15" type="module"></script>
 </body>
 </html>
