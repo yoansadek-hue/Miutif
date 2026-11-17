@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, recentReleases, playlistUrl, discography, featOf } from "./music.js?v=10";
+import { searchArtists, recentReleases, playlistUrl, discography, featOf } from "./music.js?v=11";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -104,7 +104,6 @@ function showTab(tab) {
   BTNS.forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   pillTo(BTNS.find((b) => b.dataset.tab === tab), !first);
   scroller.scrollTop = scrollPos[tab] || 0;
-  $("#results").hidden = true;
 }
 
 // ---------- Barre d'onglets : on peut y glisser le doigt (comme Quizly) ----------
@@ -226,6 +225,7 @@ function renderArtists() {
   const n = artists.length;
   $("#artists-count").textContent = n ? `${plural(n, "artiste")} suivi${n > 1 ? "s" : ""}` : "Aucun artiste";
   $("#artists-empty").hidden = n > 0;
+  updateSearchMode();
   // groupés par lettre, comme les Contacts de l'iPhone (chiffres et symboles dans « # », à la fin)
   const letterOf = (name) => {
     const c = (name || "").normalize("NFD").replace(/[\u0300-\u036f]/g, "").trim().charAt(0).toUpperCase();
@@ -274,19 +274,34 @@ async function removeArtist(id) {
   const a = artists.find((x) => x.id === id);
   if (!a) return;
   if (!(await confirmBox("Supprimer cet artiste ?", `Voulez-vous vraiment supprimer ${a.name} ? Tu ne seras plus prévenu de ses sorties.`))) return;
+  unfollowArtist(id);
+}
+
+/** Ne plus suivre un artiste (il n'est plus rajouté par une playlist). */
+function unfollowArtist(id) {
+  if (!artists.some((x) => x.id === id)) return;
   artists = artists.filter((x) => x.id !== id);
   excluded.add(id);
   releases = releases.filter((r) => r.artistId !== id);
   store.set("releases", releases);
   renderArtists();
   renderNews();
+  if (lastResults.length) renderResults();
   saveAll();
 }
 
 // Recherche
 let lastResults = [];
+/** Pendant une recherche, on n'affiche que les résultats (la liste de ses artistes est masquée). */
+function updateSearchMode() {
+  const searching = !!$("#q").value.trim();
+  $("#artists").hidden = searching;
+  $("#artists-empty").hidden = searching || artists.length > 0;
+  if (!searching) { $("#results").hidden = true; lastResults = []; }
+}
+
 const search = debounce(async (q) => {
-  if (!q) { $("#results").hidden = true; return; }
+  if (!q) { updateSearchMode(); return; }
   try {
     lastResults = await searchArtists(q, config.country);
     renderResults();
@@ -307,7 +322,7 @@ function renderResults() {
           <span class="lines"><b>${esc(a.name)}</b><span>${esc(a.genre)}</span></span>
         </button>
         ${followed.has(a.id)
-          ? '<button class="follow" disabled>Suivi</button>'
+          ? `<button class="follow on" data-unfollow-artist="${esc(a.id)}" aria-label="Ne plus suivre ${esc(a.name)}">Suivi</button>`
           : `<button class="follow" data-add="${esc(a.id)}">Suivre</button>`}
       </li>`).join("")
     : '<li><span class="empty" style="padding:16px">Aucun artiste trouvé</span></li>';
@@ -331,6 +346,19 @@ async function openArtist(id, fallbackName = "") {
   $("#sheet-avatar").innerHTML = `${initial(name)}<img src="${photo(id)}" alt="">`;
   $("#sheet-disco").innerHTML = '<p class="empty">Chargement de la discographie…</p>';
   $("#sheet-open").onclick = () => openInMusic(`https://music.apple.com/${config.country}/artist/${id}`);
+  const followBtn = $("#sheet-follow");
+  const paint = () => {
+    const on = artists.some((a) => a.id === id);
+    followBtn.textContent = on ? "Suivi ✓" : "Suivre";
+    followBtn.classList.toggle("on", on);
+  };
+  followBtn.onclick = () => {
+    if (artists.some((a) => a.id === id)) { unfollowArtist(id); toast(`Tu ne suis plus ${name}`); }
+    else if (addArtists([{ id, name: $("#sheet-name").textContent || name }], { manual: true })) { toast(`${name} ajouté`); loadReleasesSoon(); }
+    paint();
+    if (lastResults.length) renderResults();
+  };
+  paint();
   $("#sheet-scroller").scrollTop = 0;
   openSheet();
 
@@ -622,7 +650,7 @@ $("#ob-start").addEventListener("click", () => {
   showTab("new");
   loadReleases();
 });
-$("#q").addEventListener("input", (e) => search(e.target.value.trim()));
+$("#q").addEventListener("input", (e) => { updateSearchMode(); search(e.target.value.trim()); });
 $("#sheet-close").addEventListener("click", () => closeSheet());
 
 // ---------- Fiche : on la quitte en glissant le doigt vers la droite (comme sur iPhone) ----------
@@ -693,6 +721,13 @@ sheet.addEventListener("touchend", swipeEnd);
 sheet.addEventListener("touchcancel", swipeEnd);
 
 $("#results").addEventListener("click", (e) => {
+  const off = e.target.closest("[data-unfollow-artist]")?.dataset.unfollowArtist;
+  if (off) {
+    const a = artists.find((x) => x.id === off);
+    unfollowArtist(off);
+    if (a) toast(`Tu ne suis plus ${a.name}`);
+    return;
+  }
   const add = e.target.closest("[data-add]")?.dataset.add;
   if (add) {
     const a = lastResults.find((x) => x.id === add);

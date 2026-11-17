@@ -5,6 +5,8 @@
 
 const ITUNES = "https://itunes.apple.com";
 
+const simplify = (s) => String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
+
 async function getJSON(url) {
   const res = await fetch(url); // pas d'en-tête perso : sinon le navigateur ferait une requête CORS préalable
   if (!res.ok) throw new Error(`Apple Music ne répond pas (${res.status})`);
@@ -17,17 +19,61 @@ const chunks = (list, size) => {
   return out;
 };
 
+const words = (s) => String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().split(/[^a-z0-9]+/).filter(Boolean);
+
+/**
+ * Recherche d'artistes, les plus évidents d'abord.
+ * Apple classe mal les homonymes : on croise sa liste d'artistes avec une recherche de titres
+ * (un artiste dont les titres sortent en tête est populaire pour ce qu'on a tapé).
+ */
 export async function searchArtists(term, country = "fr") {
-  const url = `${ITUNES}/search?term=${encodeURIComponent(term)}&entity=musicArtist&country=${country}&limit=10`;
-  const json = await getJSON(url);
-  return (json.results || []).map((a) => ({
-    id: String(a.artistId),
-    name: a.artistName,
-    genre: a.primaryGenreName || "",
-  }));
+  const q = encodeURIComponent(term);
+  const [artists, songs] = await Promise.all([
+    getJSON(`${ITUNES}/search?term=${q}&entity=musicArtist&country=${country}&limit=25`),
+    getJSON(`${ITUNES}/search?term=${q}&entity=song&country=${country}&limit=50`).catch(() => ({ results: [] })),
+  ]);
+  const pop = new Map();
+  (songs.results || []).forEach((s, i) => {
+    const id = String(s.artistId);
+    const p = pop.get(id) || { w: 0, name: s.artistName, genre: s.primaryGenreName || "" };
+    p.w += 50 - i; // les titres en tête des résultats (les plus écoutés) comptent plus
+    pop.set(id, p);
+  });
+  const cands = new Map();
+  (artists.results || []).forEach((a, i) =>
+    cands.set(String(a.artistId), { id: String(a.artistId), name: a.artistName, genre: a.primaryGenreName || "", rank: i }));
+  // artistes trouvés seulement via leurs titres, sauf les duos créés pour un seul morceau (« A & B », « A, B »)
+  for (const [id, p] of pop) {
+    if (!cands.has(id) && p.w >= 60 && !/[&,]|feat| x /i.test(p.name)) cands.set(id, { id, name: p.name, genre: p.genre, rank: 30 });
+  }
+  const t = simplify(term), tw = words(term);
+  const score = (c) => {
+    const n = simplify(c.name), nw = words(c.name);
+    let s = 0;
+    if (n === t) s += 300;
+    else if (n.startsWith(t)) s += 220;
+    else if (tw.every((w) => nw.some((x) => x.startsWith(w)))) s += 180;
+    else if (n.includes(t)) s += 60;
+    else s -= 400;                              // ne correspond pas à ce qu'on a tapé
+    s += 12 * Math.sqrt(pop.get(c.id)?.w || 0); // popularité
+    s += 400 / (1 + 0.6 * c.rank);              // le classement d'Apple compte, surtout en tête
+    return s;
+  };
+  const shown = new Set();
+  return [...cands.values()]
+    .filter((c) => !/[&,]/.test(c.name) || simplify(c.name) === t || c.rank < 3)
+    .sort((a, b) => score(b) - score(a))
+    // un homonyme inconnu (aucun titre populaire) ne s'affiche pas sous l'artiste connu du même nom
+    .filter((c) => {
+      const k = simplify(c.name);
+      if (shown.has(k) && !pop.has(c.id)) return false;
+      shown.add(k);
+      return true;
+    })
+    .slice(0, 10)
+    .map(({ id, name, genre }) => ({ id, name, genre }));
 }
 
-const simplify = (s) => String(s || "").normalize("NFKD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]+/g, "");
 
 /**
  * Nom de l'artiste suivi si cette sortie est un featuring pour lui (il n'en est pas l'artiste principal),

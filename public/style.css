@@ -114,6 +114,11 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .x:active { color: var(--text); }
 .follow { flex: none; margin-right: 12px; padding: 6px 14px; border-radius: 999px; background: var(--text); color: var(--navy); font-size: 15px; font-weight: 600; }
 .follow:disabled { background: var(--surface-press); color: var(--muted); }
+/* déjà suivi : bouton discret, un appui désabonne */
+.follow.on, .pill-btn.on { background: var(--surface-press); color: var(--text); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14); }
+.pill-btn.ghost { background: transparent; color: var(--text); box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.25); }
+.profile-actions { display: flex; gap: 10px; justify-content: center; flex-wrap: wrap; }
+.profile-actions .pill-btn { min-width: 128px; }
 
 /* Nouveautés, groupées par jour */
 .day + .day { margin-top: 26px; }
