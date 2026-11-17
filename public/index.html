@@ -13,7 +13,7 @@
 <link rel="manifest" href="/manifest.webmanifest?v=3">
 <link rel="icon" type="image/png" href="/icons/favicon.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
-<link rel="stylesheet" href="/style.css?v=9">
+<link rel="stylesheet" href="/style.css?v=10">
 </head>
 <body>
 <!-- bande pleine sous l'heure et la batterie : rien ne défile dessous, donc pas de flou -->
@@ -73,7 +73,8 @@
         </div>
         <button class="row action" id="pl-add">Coller le lien et ajouter</button>
       </div>
-      <p class="group-foot">Dans Apple Music : ouvre la playlist › ••• › Partager › Copier le lien. Ajoute autant de playlists que tu veux : tous leurs artistes sont suivis, et chaque playlist est relue tous les jours.</p>
+      <p class="group-foot">Dans Apple Music : ouvre la playlist › ••• › Partager › Copier le lien. Ajoute autant de playlists que tu veux : leurs artistes sont suivis, et chaque playlist est relue tous les jours.</p>
+      <p class="group-foot">Apple ne partage que les 300 premiers titres d'une playlist. Si la tienne est plus longue, les artistes des titres suivants ne sont pas ajoutés : ajoute-les depuis l'onglet Artistes.</p>
 
       <div class="group" id="am-group" hidden>
         <button class="row action" id="am-import">Importer ma librairie Apple Music</button>
@@ -113,27 +114,6 @@
   </div>
 </div>
 
-<!-- Playlist : ses titres dans l'ordre d'ajout -->
-<div class="sheet" id="plsheet" hidden role="dialog" aria-modal="true" aria-labelledby="pl-name">
-  <div class="sheet-bar">
-    <button class="close" id="pl-close" aria-label="Fermer"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="M6 6l12 12M18 6 6 18"/></svg></button>
-  </div>
-  <div class="sheet-view">
-    <div class="scroller" id="pl-scroller">
-      <div class="profile">
-        <img class="pl-hero" id="pl-hero" alt="">
-        <h1 id="pl-name"></h1>
-        <p class="sub" id="pl-sub"></p>
-      </div>
-      <div class="seg" id="pl-order" role="radiogroup" aria-label="Ordre">
-        <button class="on" data-order="desc" role="radio" aria-checked="true">Derniers ajouts</button>
-        <button data-order="asc" role="radio" aria-checked="false">Premiers ajouts</button>
-      </div>
-      <ul class="list" id="pl-tracks"></ul>
-    </div>
-  </div>
-</div>
-
 <!-- Premier lancement : la playlist puis les notifications -->
 <div class="onboard" id="onboard" hidden>
   <div class="scroller">
@@ -150,7 +130,7 @@
         </div>
         <button class="row action" id="ob-add">Coller le lien</button>
       </div>
-      <p class="group-foot">Dans Apple Music : ouvre ta playlist › ••• › Partager › Copier le lien.</p>
+      <p class="group-foot">Dans Apple Music : ouvre ta playlist › ••• › Partager › Copier le lien. Seuls les 300 premiers titres d'une playlist sont lus.</p>
 
       <h2 class="group-title">2 · Notifications</h2>
       <div class="group"><button class="row action" id="ob-notif">Activer les notifications</button></div>
@@ -174,6 +154,6 @@
 </div>
 
 <div class="toast" id="toast" role="status" aria-live="polite"></div>
-<script src="/app.js?v=10" type="module"></script>
+<script src="/app.js?v=11" type="module"></script>
 </body>
 </html>

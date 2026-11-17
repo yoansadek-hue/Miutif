@@ -186,6 +186,7 @@ async function refreshPlaylists(env, key, user, day) {
       if (!parsed) continue;
       p.count = parsed.artists.length;
       p.title = parsed.title;
+      p.truncated = parsed.truncated;
       if (parsed.image) p.cover = parsed.image;
       for (const a of parsed.artists) {
         if (!known.has(a.id) && !excluded.has(a.id)) { known.add(a.id); user.artists.push(a); }
@@ -279,6 +280,7 @@ const cleanPlaylists = (list) => {
       url: playlistUrl(p?.url),
       title: String(p?.title || "Playlist").slice(0, 120),
       count: Number(p?.count) || 0,
+      truncated: p?.truncated === true,
       cover: /^https:\/\/is\d-ssl\.mzstatic\.com\/[^\s"']+$/.test(p?.cover || "") ? p.cover : null,
     }))
     .filter((p) => p.url && !seen.has(p.url) && seen.add(p.url))

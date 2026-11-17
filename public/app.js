@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, recentReleases, playlistUrl, discography } from "./music.js?v=8";
+import { searchArtists, recentReleases, playlistUrl, discography } from "./music.js?v=9";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -405,9 +405,9 @@ const loadReleasesSoon = debounce(loadReleases, 900);
 
 function renderPlaylists() {
   const html = playlists.map((p) => `
-    <div class="row pl" data-pl="${esc(p.url)}">
+    <div class="row pl">
       ${p.cover ? `<img class="pl-cover" src="${esc(p.cover)}" alt="">` : '<span class="pl-cover"></span>'}
-      <span class="lines"><b>${esc(p.title)}</b><span>${plural(p.count || 0, "artiste")}</span></span>
+      <span class="lines"><b>${esc(p.title)}</b><span>${plural(p.count || 0, "artiste")}${p.truncated ? " · 300 premiers titres seulement" : ""}</span></span>
       <button class="x" data-unfollow="${esc(p.url)}" aria-label="Retirer la playlist">${ICON_X}</button>
     </div>`).join("");
   $("#playlists").innerHTML = html;
@@ -421,7 +421,7 @@ async function importPlaylist(input) {
   if (!url) throw new Error("Colle un lien de playlist Apple Music");
   const res = await api("playlist", { url });
   const added = addArtists(res.artists);
-  const entry = { url, title: res.title.replace(/\s+sur\s+Apple\s+Music$/, ""), count: res.artists.length, cover: res.image || null };
+  const entry = { url, title: res.title.replace(/\s+sur\s+Apple\s+Music$/, ""), count: res.artists.length, cover: res.image || null, truncated: !!res.truncated };
   playlists = [entry, ...playlists.filter((p) => p.url !== url)];
   renderPlaylists();
   saveAll();
@@ -441,7 +441,9 @@ async function addPlaylistFromField(inputSel = "#pl-url", btnSel = "#pl-add") {
   try {
     const r = await importPlaylist(value);
     $(inputSel).value = "";
-    toast(r.added ? `${plural(r.added, "artiste")} ajouté${r.added > 1 ? "s" : ""}` : "Playlist ajoutée");
+    toast(r.truncated
+      ? `${plural(r.added, "artiste")} ajouté${r.added > 1 ? "s" : ""} (seulement les 300 premiers titres de la playlist)`
+      : r.added ? `${plural(r.added, "artiste")} ajouté${r.added > 1 ? "s" : ""}` : "Playlist ajoutée");
     loadReleasesSoon();
   } catch (e) {
     toast(e.message);
@@ -461,64 +463,6 @@ async function refreshPlaylists() {
   if (added) toast(`${added} nouvel${added > 1 ? "s" : ""} artiste${added > 1 ? "s" : ""} depuis tes playlists`);
   return added;
 }
-
-// ---------- Playlist ouverte : ses titres dans l'ordre d'ajout ----------
-// Apple garde les titres d'une playlist dans l'ordre où ils ont été ajoutés (le dernier ajouté en bas).
-
-let plTracks = [];
-let plOrder = "desc";
-
-function renderPlTracks() {
-  const sorted = plOrder === "desc" ? [...plTracks].reverse() : plTracks;
-  $("#pl-tracks").innerHTML = sorted.map((t) => `
-    <li>
-      <button class="main" data-url="${esc(t.url || "")}">
-        <img class="cover" src="${esc(t.artwork || "")}" alt="" loading="lazy">
-        <span class="lines"><b>${esc(t.title)}</b><span>${esc(t.artist)}</span></span>
-        <span class="date">${t.pos + 1}</span>
-      </button>
-    </li>`).join("");
-}
-
-async function openPlaylist(url) {
-  const p = playlists.find((x) => x.url === url);
-  if (!p) return;
-  const hero = $("#pl-hero");
-  if (p.cover) hero.src = p.cover; else hero.removeAttribute("src");
-  $("#pl-name").textContent = p.title;
-  $("#pl-sub").textContent = "Chargement des titres…";
-  $("#pl-tracks").innerHTML = '<li class="skeleton"></li>'.repeat(6);
-  $("#pl-scroller").scrollTop = 0;
-  $("#plsheet").hidden = false;
-  try {
-    const res = await api("playlist", { url });
-    if ($("#plsheet").hidden) return;
-    plTracks = res.tracks.map((t, i) => ({ ...t, pos: i }));
-    if (res.image) hero.src = res.image;
-    $("#pl-sub").textContent = `${plural(plTracks.length, "titre")} · ${plural(res.artists.length, "artiste")}`;
-    renderPlTracks();
-  } catch (e) {
-    $("#pl-sub").textContent = "";
-    $("#pl-tracks").innerHTML = `<li><span class="empty" style="padding:16px">${esc(e.message)}</span></li>`;
-  }
-}
-
-$("#pl-close").addEventListener("click", () => { $("#plsheet").hidden = true; });
-$("#pl-order").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-order]");
-  if (!b || b.dataset.order === plOrder) return;
-  plOrder = b.dataset.order;
-  $("#pl-order").querySelectorAll("button").forEach((x) => {
-    x.classList.toggle("on", x === b);
-    x.setAttribute("aria-checked", String(x === b));
-  });
-  renderPlTracks();
-  $("#pl-scroller").scrollTop = 0;
-});
-$("#pl-tracks").addEventListener("click", (e) => {
-  const url = e.target.closest("[data-url]")?.dataset.url;
-  if (url) openInMusic(url);
-});
 
 // ---------- Notifications ----------
 
@@ -692,11 +636,7 @@ async function onUnfollowClick(e) {
   renderPlaylists();
   saveAll();
 }
-$("#playlists").addEventListener("click", (e) => {
-  if (e.target.closest("[data-unfollow]")) return onUnfollowClick(e);
-  const url = e.target.closest("[data-pl]")?.dataset.pl;
-  if (url) openPlaylist(url);
-});
+$("#playlists").addEventListener("click", onUnfollowClick);
 $("#ob-playlists").addEventListener("click", onUnfollowClick);
 
 // Photo absente : on garde l'initiale

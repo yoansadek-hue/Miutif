@@ -60,7 +60,8 @@ globalThis.fetch = async (url, init = {}) => {
   if (url.startsWith("https://music.apple.com/") && url.includes("/playlist/")) {
     if (!url.includes("pl.ok")) return new Response("introuvable", { status: 404 });
     const data = { data: [{ sections: [{ items: playlistArtists.map(([id, n], i) => ({ title: `Titre ${i}`, artistName: `${n} & Artiste A`, contentDescriptor: { kind: "song", identifiers: { storeAdamID: `90${i}` }, url: `https://music.apple.com/fr/album/x/1?i=90${i}` }, artwork: { dictionary: { url: "https://is1-ssl.mzstatic.com/image/thumb/s.jpg/{w}x{h}bb.{f}" } }, subtitleLinks: [link(id, n), link("111", "Artiste A")] })) }] }] };
-    return new Response(`<meta property="og:title" content="Ma playlist &amp; moi sur Apple Music"><meta property="og:image" content="https://is1-ssl.mzstatic.com/image/thumb/Features/x/y.png/1200x630SC.DN01.jpg?l=fr-FR"><script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script>`);
+    const more = url.includes("pl.oklong") ? '{"nextIntent":{"$kind":"PlaylistPaginationIntent"}}' : "";
+    return new Response(`${more}<meta property="og:title" content="Ma playlist &amp; moi sur Apple Music"><meta property="og:image" content="https://is1-ssl.mzstatic.com/image/thumb/Features/x/y.png/1200x630SC.DN01.jpg?l=fr-FR"><script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script>`);
   }
   if (url.startsWith("https://music.apple.com/") && url.includes("/artist/")) {
     artistFetches++;
@@ -117,9 +118,9 @@ check((await call("GET", "/api/artist/999/photo")).status === 404, "photo absent
 // --- Playlist
 const pl = await call("POST", "/api/playlist", { url: "Écoute https://music.apple.com/fr/playlist/ma-playlist/pl.ok?ls=1" });
 check(pl.status === 200 && pl.data.title === "Ma playlist & moi" && pl.data.artists.length === 3, "playlist : lien partagé lu, chaque artiste une seule fois");
-check(pl.data.tracks.length === 3 && pl.data.tracks[0].url.endsWith("?i=900") && pl.data.tracks[0].artwork.endsWith("/200x200bb.jpg") && pl.data.tracks[1].artist === "Artiste B & Artiste A",
-  "playlist : tous ses titres, dans l'ordre, avec lien Apple Music et pochette");
+check(pl.data.trackCount === 3 && pl.data.truncated === false && !("tracks" in pl.data), "playlist : nombre de titres lus, playlist complète");
 check(pl.data.image === "https://is1-ssl.mzstatic.com/image/thumb/Features/x/y.png/300x300bb.jpg", "playlist : couverture carrée récupérée");
+check((await call("POST", "/api/playlist", { url: "https://music.apple.com/fr/playlist/x/pl.oklong" })).data.truncated === true, "playlist de plus de 300 titres : signalée comme incomplète");
 check((await call("POST", "/api/playlist", { url: "https://music.apple.com/fr/playlist/x/pl.absente" })).status === 404, "playlist : non partagée → message clair");
 check((await call("POST", "/api/playlist", { url: "https://exemple.com/fr/playlist/x" })).status === 400, "playlist : autre site refusé");
 

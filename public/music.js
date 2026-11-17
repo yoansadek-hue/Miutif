@@ -105,7 +105,14 @@ export function parsePlaylistPage(html) {
   walk(JSON.parse(m[1]));
   const title = (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "Playlist")
     .replace(/&amp;/g, "&").replace(/&#39;/g, "'").replace(/&quot;/g, '"').replace(/\s+sur\s+Apple\s+Music$/, "");
-  return { title, image: coverFrom(html), artists: [...artists.values()], tracks: [...tracks.values()] };
+  return {
+    title,
+    image: coverFrom(html),
+    artists: [...artists.values()],
+    trackCount: tracks.size,
+    // Apple ne met que les 300 premiers titres dans la page ; au-delà, elle indique une « page suivante »
+    truncated: /PlaylistPaginationIntent/.test(html),
+  };
 }
 
 /** Couverture carrée d'une page music.apple.com (à partir de son image de partage). */
