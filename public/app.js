@@ -179,13 +179,14 @@ for (const ev of ["pointerup", "pointercancel"]) {
 // ---------- Tirer vers le bas : le rond se remplit, puis l'app se recharge entièrement ----------
 // (seulement tout en haut d'une page, pour un geste vraiment vertical ; rien ne bouge avant 24 px)
 (() => {
-  const ptr = $("#ptr"), arc = ptr.querySelector(".arc"), LEN = 88, DEAD = 24, NEED = 72;
+  const ptr = $("#ptr"), spokes = [...ptr.querySelectorAll("i")], DEAD = 24, NEED = 72;
   let st = null, busy = false;
   const set = (sc, d, p) => {
     sc.style.setProperty("--pull", `${d}px`);
-    ptr.style.opacity = String(Math.min(1, d / 40));
-    ptr.style.transform = `translateY(${Math.min(d, 60) - 20}px)`;
-    arc.style.strokeDashoffset = String(LEN * (1 - p));
+    // centré dans l'espace ouvert au-dessus de la page (comme les apps iPhone)
+    ptr.style.transform = `translateY(${Math.max(0, d / 2 - 14)}px)`;
+    // les traits apparaissent un par un pendant qu'on tire
+    spokes.forEach((el, i) => el.classList.toggle("on", p >= (i + 1) / spokes.length));
   };
   for (const t of TABS) {
     const sc = $(`#scroll-${t}`);
@@ -218,8 +219,9 @@ for (const ev of ["pointerup", "pointercancel"]) {
       if (s.dy < NEED) { set(sc, 0, 0); return; }
       busy = true;
       ptr.classList.add("spin");
-      set(sc, 56, 0.75);
-      setTimeout(() => location.reload(), 450); // rechargement complet de l'app
+      set(sc, 64, 1);
+      haptic();
+      setTimeout(() => location.reload(), 700); // rechargement complet de l'app
     };
     sc.addEventListener("touchend", end, { passive: true });
     sc.addEventListener("touchcancel", end, { passive: true });
