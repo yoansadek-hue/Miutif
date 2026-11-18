@@ -48,8 +48,8 @@ self.addEventListener("push", (e) => {
   try { d = e.data ? e.data.json() : {}; } catch { d = { body: e.data ? e.data.text() : "" }; }
   e.waitUntil(self.registration.showNotification(d.title || "Miutif", {
     body: d.body || "",
-    icon: "/icons/icon-192.png?v=2",
-    badge: "/icons/icon-192.png?v=2",
+    icon: "/icons/icon-192.png?v=3",
+    badge: "/icons/icon-192.png?v=3",
     tag: d.tag || undefined,
     data: { url: d.url || "/" },
   }));
