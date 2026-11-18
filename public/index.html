@@ -13,7 +13,7 @@
 <link rel="manifest" href="/manifest.webmanifest?v=4">
 <link rel="icon" type="image/png" href="/icons/favicon.png?v=2">
 <link rel="apple-touch-icon" href="/icons/apple-touch-icon.png?v=2">
-<link rel="stylesheet" href="/style.css?v=21">
+<link rel="stylesheet" href="/style.css?v=22">
 </head>
 <body>
 <!-- bande pleine sous l'heure et la batterie : rien ne défile dessous, donc pas de flou -->
@@ -167,6 +167,19 @@
   </div>
 </div>
 
+<!-- Suppression d'un artiste : fenêtre du bas, comme sur iPhone -->
+<div class="actionsheet" id="delsheet" hidden role="alertdialog" aria-modal="true" aria-labelledby="del-name">
+  <div class="as-panel">
+    <div class="as-head">
+      <span class="avatar as-avatar" id="del-avatar"></span>
+      <b id="del-name"></b>
+      <p>Tu ne seras plus prévenu de ses sorties.</p>
+    </div>
+    <button class="as-btn as-danger" id="del-yes">Ne plus suivre</button>
+  </div>
+  <button class="as-btn as-cancel" id="del-no">Annuler</button>
+</div>
+
 <!-- Confirmation -->
 <div class="modal" id="confirm" hidden role="alertdialog" aria-modal="true" aria-labelledby="confirm-title">
   <div class="box">
@@ -179,6 +192,6 @@
   </div>
 </div>
 
-<script src="/app.js?v=24" type="module"></script>
+<script src="/app.js?v=25" type="module"></script>
 </body>
 </html>

@@ -186,8 +186,12 @@ check(pushes.length === 0 && robotReads === 0, "10 h : aucune notification");
 robotFile = { updated: new Date(NOW).toISOString(), byCountry: { fr: await recentReleases(["111", "222", "333"], { days: 14, dedupe: false }) } };
 
 check((await call("GET", "/api/status")).data.updated === robotFile.updated, "état du robot : date de sa dernière publication (Réglages)");
+// un utilisateur dont aucun artiste n'a rien sorti
+const calme = "calme0123456789abcdef";
+await call("POST", "/api/sync", { id: calme, tz: "Europe/Paris", artists: [{ id: "999", name: "Silencieux" }], subscription: phone("calme") });
 // --- 11 h : une seule notification récap
 await runCron("2026-11-18T10:00:00Z");
+check(!pushes.some((p) => p.url.endsWith("/calme")) && user(calme).lastRun === "2026-11-18", "11 h : aucune sortie chez ses artistes → aucune notification");
 check(pushes.length === 1, "11 h : UNE seule notification pour 2 sorties");
 const recap = pushes[0]?.payload;
 check(recap?.title === "2 nouvelles sorties" && recap.body.includes("Artiste A — Neuf") && recap.body.includes("Artiste B — Album B"), "11 h : le récap liste les sorties");

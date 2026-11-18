@@ -260,8 +260,8 @@ const pullResume = {};
       const reload = () => location.replace(`/?tab=${current}`);
       Promise.race([
         (async () => { if ("caches" in window) for (const k of await caches.keys()) await caches.delete(k); })(),
-        new Promise((r) => setTimeout(r, 900)),
-      ]).finally(() => setTimeout(reload, 300));
+        new Promise((r) => setTimeout(r, 300)),
+      ]).finally(() => setTimeout(reload, 120));
     };
     sc.addEventListener("touchend", end, { passive: true });
     sc.addEventListener("touchcancel", end, { passive: true });
@@ -481,8 +481,37 @@ function addArtists(list, { manual = false } = {}) {
 async function removeArtist(id) {
   const a = artists.find((x) => x.id === id);
   if (!a) return;
-  if (!(await confirmBox("Supprimer cet artiste ?", `Voulez-vous vraiment supprimer ${a.name} ? Tu ne seras plus prévenu de ses sorties.`))) return;
+  if (!(await askRemove(a))) return;
+  // la ligne devient rouge, glisse hors de la liste et se referme, puis l'artiste est retiré
+  const li = document.querySelector(`#artists [data-remove="${CSS.escape(id)}"]`)?.closest("li");
+  if (li && !reduced()) {
+    li.style.maxHeight = `${li.offsetHeight}px`;
+    li.classList.add("removing");
+    haptic();
+    requestAnimationFrame(() => requestAnimationFrame(() => li.classList.add("out")));
+    await new Promise((r) => setTimeout(r, 560));
+  }
   unfollowArtist(id);
+}
+
+/** Fenêtre du bas : photo et nom de l'artiste, « Ne plus suivre » en rouge, « Annuler ». */
+function askRemove(a) {
+  return new Promise((resolve) => {
+    const box = $("#delsheet");
+    $("#del-name").textContent = `Ne plus suivre ${a.name} ?`;
+    $("#del-avatar").innerHTML = `${initial(a.name)}<img src="${photo(a.id)}" alt="">`;
+    box.classList.remove("closing");
+    box.hidden = false;
+    const done = (ok) => {
+      box.classList.add("closing");
+      setTimeout(() => { box.hidden = true; box.classList.remove("closing"); }, 220);
+      $("#del-yes").onclick = $("#del-no").onclick = box.onclick = null;
+      resolve(ok);
+    };
+    $("#del-yes").onclick = () => done(true);
+    $("#del-no").onclick = () => done(false);
+    box.onclick = (e) => { if (e.target === box) done(false); }; // appui à côté = annuler
+  });
 }
 
 /** Ne plus suivre un artiste (il n'est plus rajouté par une playlist). */
@@ -623,7 +652,7 @@ const suggestCard = (s, because) => {
 };
 
 function renderSimilar() {
-  const list = similarList.filter((s) => !dismissed.has(s.id));
+  const list = similarList.filter((s) => !dismissed.has(s.id) && !artists.some((x) => x.id === s.id) && !excluded.has(s.id));
   $("#sheet-similar").innerHTML = list.length
     ? `<div class="sugg-head"><h2>Suggestions pour vous</h2></div>
        <div class="carousel">${list.map((s) => suggestCard(s, $("#sheet-name").textContent)).join("")}</div>`
@@ -1248,6 +1277,14 @@ async function start() {
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
+  // les sorties sont cherchées tout de suite (avec le pays déjà connu), en même temps que le reste
+  const ready = loadReleases();
+  if (resumed) {
+    // le rond tourne un court instant (les dernières sorties sont déjà affichées), puis tout remonte
+    Promise.race([ready, new Promise((r) => setTimeout(r, 700))]).then(() =>
+      setTimeout(() => pullResume.release($(`#scroll-${current}`)), Math.max(0, 300 - (performance.now() - resumedAt))));
+  }
+
   try {
     config = { ...config, ...(await api("config")) };
     store.set("country", config.country);
@@ -1264,18 +1301,12 @@ async function start() {
     addArtists(saved.artists || []);
     renderPlaylists();
     if (artists.length !== before || saved.playlists?.length) saveAll();
+    if (artists.length !== before) loadReleasesSoon(); // nouveaux artistes venus du serveur
   } catch {}
 
   const sub = await renderNotifState();
   if (sub && Notification.permission === "granted") sync({ subscription: sub.toJSON() }).catch(() => {});
 
-  const ready = loadReleases();
-  if (resumed) {
-    // le rond tourne le temps que les sorties arrivent (au moins un instant, au plus 2 s), puis tout remonte
-    await Promise.race([ready, new Promise((r) => setTimeout(r, 2000))]);
-    await new Promise((r) => setTimeout(r, Math.max(0, 450 - (performance.now() - resumedAt))));
-    pullResume.release($(`#scroll-${current}`));
-  }
   if (await refreshPlaylists()) loadReleasesSoon();
 }
 
