@@ -1,14 +1,16 @@
-// Service worker de Miutif : notifications + ouverture instantanée et hors connexion.
-// L'app est servie tout de suite depuis la mémoire, puis mise à jour en arrière-plan.
-// Si une nouvelle version arrive au lancement, l'app est prévenue et se recharge.
-const SHELL = "miutif-shell-v1";
+// Service worker de Miutif : notifications + ouverture hors connexion.
+// La page vient toujours du réseau quand il y en a (au plus 2,5 s d'attente), sinon de la mémoire :
+// page et code restent ainsi toujours de la même version. Les fichiers versionnés (?v=…) sont gardés en mémoire.
+const SHELL = "miutif-shell-v2";
 
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
 
-async function notifyUpdate() {
-  for (const c of await self.clients.matchAll({ type: "window" })) c.postMessage({ type: "updated" });
-}
+
+self.addEventListener("activate", (e) => {
+  // l'ancienne mémoire (qui pouvait mélanger deux versions) est effacée
+  e.waitUntil(caches.keys().then((keys) => Promise.all(keys.filter((k) => k !== SHELL).map((k) => caches.delete(k)))));
+});
 
 self.addEventListener("fetch", (e) => {
   const req = e.request;
@@ -16,22 +18,28 @@ self.addEventListener("fetch", (e) => {
   // les données (API) et ce service worker passent toujours par le réseau
   if (req.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname === "/sw.js" || url.searchParams.has("fresh")) return;
   const nav = req.mode === "navigate";
-  const key = nav ? "/" : req; // toutes les ouvertures (/?tab=…) partagent la même page
   e.respondWith((async () => {
     const cache = await caches.open(SHELL);
-    const cached = await cache.match(key);
-    const network = fetch(req).then(async (res) => {
-      if (res.ok && res.type === "basic") {
-        if (nav && cached) {
-          const [a, b] = await Promise.all([cached.clone().text(), res.clone().text()]);
-          if (a !== b) notifyUpdate(); // nouvelle version de l'app
-        }
-        await cache.put(key, res.clone());
-      }
+    if (nav) {
+      // la page : réseau d'abord (à jour), mémoire si pas de réseau ou réseau trop lent
+      const network = fetch(req).then((res) => { if (res.ok) cache.put("/", res.clone()); return res; });
+      const timeout = new Promise((r) => setTimeout(r, 2500, null));
+      const res = await Promise.race([network.catch(() => null), timeout]);
+      if (res) return res;
+      const cached = await cache.match("/");
+      if (cached) return cached;
+      return (await network.catch(() => null)) || new Response("Miutif est hors connexion.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    }
+    // fichiers de l'app : la mémoire d'abord (chaque version a sa propre adresse ?v=…), sinon le réseau
+    const cached = await cache.match(req);
+    if (cached) return cached;
+    try {
+      const res = await fetch(req);
+      if (res.ok && res.type === "basic") cache.put(req, res.clone());
       return res;
-    }).catch(() => null);
-    if (cached) { e.waitUntil(network); return cached; }
-    return (await network) || new Response("Miutif est hors connexion.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+    } catch {
+      return new Response("", { status: 504 });
+    }
   })());
 });
 

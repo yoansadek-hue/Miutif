@@ -59,8 +59,8 @@ function openInMusic(url) {
 /** Petite fenêtre de confirmation. Renvoie true si l'utilisateur confirme. */
 function confirmBox(title, text, ok = "Supprimer", avatarHtml = "") {
   return new Promise((resolve) => {
-    $("#confirm-avatar").innerHTML = avatarHtml;
-    $("#confirm-avatar").hidden = !avatarHtml;
+    const pp = $("#confirm-avatar"); // (absent d'une ancienne page : la confirmation marche quand même)
+    if (pp) { pp.innerHTML = avatarHtml; pp.hidden = !avatarHtml; }
     $("#confirm-title").textContent = title;
     $("#confirm-text").textContent = text;
     $("#confirm-yes").textContent = ok;
