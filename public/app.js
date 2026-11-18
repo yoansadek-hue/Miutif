@@ -215,7 +215,7 @@ async function newerVersion() {
     clearTimeout(t);
     const online = html.match(/app\.js\?v=(\d+)/)?.[1];
     const mine = document.querySelector('script[src*="app.js"]')?.getAttribute("src").match(/v=(\d+)/)?.[1];
-    return !!(online && mine && online !== mine);
+    return !!(online && mine && Number(online) > Number(mine)); // seulement plus récente (juste après une mise en ligne, un serveur peut encore servir l'ancienne)
   } catch {
     return false; // pas de réseau : on rafraîchit ce qu'on peut
   }
