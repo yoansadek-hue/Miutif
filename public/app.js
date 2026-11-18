@@ -80,7 +80,32 @@ function fieldError(inputSel, msg) {
 
 // ---------- Synchronisation ----------
 
-const sync = (extra = {}) => api("sync", { id: userId, artists, playlists, excluded: [...excluded], tz, ...extra });
+let unexcluded = new Set(store.get("unexcluded", [])); // artistes supprimés puis suivis à nouveau (à signaler au serveur)
+const sync = (extra = {}) => {
+  const sent = [...unexcluded];
+  return api("sync", { id: userId, artists, playlists, excluded: [...excluded], unexcluded: sent, tz, ...extra }).then((res) => {
+    for (const id of sent) unexcluded.delete(id);
+    store.set("unexcluded", [...unexcluded]);
+    applyServer(res);
+    return res;
+  });
+};
+
+/** S'aligne sur la version fusionnée du serveur (artistes ajoutés ou supprimés ailleurs). */
+function applyServer(res) {
+  if (!res || !Array.isArray(res.artistList)) return;
+  let changed = false;
+  for (const id of res.excluded || []) if (!excluded.has(String(id)) && !unexcluded.has(String(id))) { excluded.add(String(id)); changed = true; }
+  const kept = artists.filter((x) => !excluded.has(x.id));
+  if (kept.length !== artists.length) { artists = kept; changed = true; }
+  const known = new Set(artists.map((x) => x.id));
+  for (const x of res.artistList) if (!known.has(x.id) && !excluded.has(x.id)) { artists.push({ id: x.id, name: x.name }); known.add(x.id); changed = true; }
+  if (!changed) return;
+  store.set("artists", artists);
+  store.set("excluded", [...excluded]);
+  renderArtists();
+  loadReleasesSoon();
+}
 const syncSoon = debounce(() => sync().catch(() => {}), 800);
 
 function saveAll() {
@@ -501,7 +526,7 @@ function addArtists(list, { manual = false } = {}) {
   for (const a of list) {
     const id = String(a.id);
     if (!id || known.has(id)) continue;
-    if (excluded.has(id)) { if (!manual) continue; excluded.delete(id); }
+    if (excluded.has(id)) { if (!manual) continue; excluded.delete(id); unexcluded.add(id); store.set("unexcluded", [...unexcluded]); }
     known.add(id);
     added.push({ id, name: a.name });
   }

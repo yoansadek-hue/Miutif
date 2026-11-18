@@ -164,6 +164,14 @@ const sy = await call("POST", "/api/sync", {
 });
 check(sy.data.subscribed && sy.data.artists === 2, "sync : abonnement gardé, doublons et faux identifiants ignorés");
 const saved = (await call("GET", `/api/user?id=${id}`)).data;
+// un appareil avec une liste périmée (sans les suppressions, avec l'artiste supprimé) ne doit rien effacer
+const stale = await call("POST", "/api/sync", { id, artists: [{ id: "111", name: "Artiste A" }, { id: "444", name: "Supprimé" }], excluded: [] });
+check(stale.data.artistList.length === 2 && !stale.data.artistList.some((x) => x.id === "444") && stale.data.excluded.includes("444"),
+  "sync : une liste périmée n'efface ni les artistes ni les suppressions (fusion)");
+// suivre à nouveau explicitement un artiste supprimé
+const back = await call("POST", "/api/sync", { id, artists: [{ id: "444", name: "De retour" }], excluded: [], unexcluded: ["444"] });
+check(back.data.artistList.some((x) => x.id === "444") && !back.data.excluded.includes("444"), "sync : un artiste suivi à nouveau sort des suppressions");
+await call("POST", "/api/sync", { id, artists: [], excluded: ["444"] }); // on le resupprime pour la suite du scénario
 check(saved.artists.length === 2 && saved.playlists.length === 1 && saved.excluded[0] === "444", "user : artistes, playlists valides et artistes retirés récupérables");
 check(saved.playlists[0].cover === null, "sync : une couverture qui ne vient pas d'Apple est refusée");
 

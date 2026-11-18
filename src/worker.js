@@ -136,15 +136,25 @@ async function api(request, url, env) {
       const id = cleanUserId(body.id);
       if (!id) return json({ error: "id invalide" }, 400);
       const user = (await env.DB.get(`u:${id}`, "json")) || { notified: {}, created: Date.now() };
-      if (Array.isArray(body.artists)) user.artists = cleanArtists(body.artists);
+      // Fusion (jamais d'écrasement) : un appareil avec une liste périmée ne peut pas effacer ce qui a changé ailleurs.
+      // - les suppressions s'additionnent ; seul un artiste suivi à nouveau explicitement (« unexcluded ») en sort ;
+      // - les artistes s'additionnent, moins les supprimés.
+      if (Array.isArray(body.artists) || Array.isArray(body.excluded)) {
+        const unex = new Set(cleanIdList(Array.isArray(body.unexcluded) ? body.unexcluded : []));
+        const ex = new Set([...(user.excluded || []), ...cleanIdList(Array.isArray(body.excluded) ? body.excluded : [])].filter((x) => !unex.has(x)));
+        const byId = new Map((user.artists || []).map((a) => [a.id, a]));
+        for (const a of cleanArtists(Array.isArray(body.artists) ? body.artists : [])) if (!byId.has(a.id) || !byId.get(a.id).name) byId.set(a.id, a);
+        user.artists = [...byId.values()].filter((a) => !ex.has(a.id));
+        user.excluded = [...ex];
+      }
       if (Array.isArray(body.playlists)) user.playlists = cleanPlaylists(body.playlists);
-      if (Array.isArray(body.excluded)) user.excluded = cleanIdList(body.excluded);
       if (body.subscription === null) delete user.sub;
       else if (validSub(body.subscription)) user.sub = pickSub(body.subscription);
       if (typeof body.tz === "string" && body.tz.length < 64) user.tz = body.tz;
       user.country = country;
       await env.DB.put(`u:${id}`, JSON.stringify(user));
-      return json({ ok: true, subscribed: !!user.sub, artists: user.artists?.length || 0 });
+      // l'appareil reçoit la version fusionnée et s'aligne dessus
+      return json({ ok: true, subscribed: !!user.sub, artists: user.artists?.length || 0, artistList: user.artists || [], excluded: user.excluded || [] });
     }
   }
   return json({ error: "Introuvable" }, 404);
