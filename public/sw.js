@@ -14,7 +14,7 @@ self.addEventListener("fetch", (e) => {
   const req = e.request;
   const url = new URL(req.url);
   // les données (API) et ce service worker passent toujours par le réseau
-  if (req.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname === "/sw.js") return;
+  if (req.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname === "/sw.js" || url.searchParams.has("fresh")) return;
   const nav = req.mode === "navigate";
   const key = nav ? "/" : req; // toutes les ouvertures (/?tab=…) partagent la même page
   e.respondWith((async () => {

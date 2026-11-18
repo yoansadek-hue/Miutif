@@ -205,6 +205,21 @@ for (const ev of ["pointerup", "pointercancel"]) {
 })();
 
 const resetPull = [];
+
+/** Une nouvelle version de l'app est-elle en ligne ? (compare le numéro de version de app.js) */
+async function newerVersion() {
+  try {
+    const ctrl = new AbortController();
+    const t = setTimeout(() => ctrl.abort(), 800);
+    const html = await fetch(`/?fresh=${Date.now()}`, { cache: "no-store", signal: ctrl.signal }).then((r) => r.text());
+    clearTimeout(t);
+    const online = html.match(/app\.js\?v=(\d+)/)?.[1];
+    const mine = document.querySelector('script[src*="app.js"]')?.getAttribute("src").match(/v=(\d+)/)?.[1];
+    return !!(online && mine && online !== mine);
+  } catch {
+    return false; // pas de réseau : on rafraîchit ce qu'on peut
+  }
+}
 const pullResume = {};
 // ---------- Tirer vers le bas : le rond se remplit, puis l'app se recharge entièrement ----------
 // (seulement tout en haut d'une page, pour un geste vraiment vertical ; rien ne bouge avant 24 px)
@@ -254,19 +269,37 @@ const pullResume = {};
       ptr.classList.add("spin");
       set(sc, 64, 1);
       haptic();
-      // rechargement complet, sur le même onglet, avec la toute dernière version (pas celle gardée en mémoire).
-      // L'app rouvre avec la page encore descendue et le rond qui tourne, puis tout remonte en douceur : pas de coupure.
-      try { sessionStorage.setItem("miutif.ptr", "1"); } catch {}
-      const reload = () => location.replace(`/?tab=${current}`);
-      Promise.race([
-        (async () => { if ("caches" in window) for (const k of await caches.keys()) await caches.delete(k); })(),
-        new Promise((r) => setTimeout(r, 300)),
-      ]).finally(() => setTimeout(reload, 120));
+      refreshInPlace(sc);
     };
     sc.addEventListener("touchend", end, { passive: true });
     sc.addEventListener("touchcancel", end, { passive: true });
     resetPull.push(() => { if (!busy) { st = null; sc.classList.remove("pulling"); ptr.classList.remove("dragging"); set(sc, 0, 0); } });
   }
+  /**
+   * Rafraîchissement sur place (rapide) : playlists et sorties relues sans recharger la page.
+   * Seule une nouvelle version de l'app déclenche un vrai rechargement (qui reprend en douceur, rond compris).
+   */
+  async function refreshInPlace(sc) {
+    const t0 = performance.now();
+    if (await newerVersion()) {
+      try { sessionStorage.setItem("miutif.ptr", "1"); } catch {}
+      if ("caches" in window) for (const k of await caches.keys()) await caches.delete(k);
+      location.replace(`/?tab=${current}`);
+      return;
+    }
+    const work = (async () => {
+      const added = await refreshPlaylists();
+      await loadReleases(true);
+      if (added) await loadReleases(true);
+      renderNotifState();
+    })();
+    await Promise.race([work, new Promise((r) => setTimeout(r, 1500))]); // jamais plus d'1,5 s de rond
+    await new Promise((r) => setTimeout(r, Math.max(0, 350 - (performance.now() - t0)))); // le rond se voit un instant
+    ptr.classList.remove("spin");
+    set(sc, 0, 0);
+    busy = false;
+  }
+
   // après le rechargement : on reprend là où le geste s'était arrêté, puis on remonte en douceur
   pullResume.hold = (sc) => {
     ptr.classList.add("dragging", "spin");
@@ -796,11 +829,14 @@ function renderNews(loading = false) {
   if (html !== lastNewsHtml) { box.innerHTML = html; lastNewsHtml = html; }
 }
 
-let loadingReleases = false;
-async function loadReleases() {
-  if (loadingReleases) return;
+let loadingReleases = null;
+async function loadReleases(force = false) {
+  if (loadingReleases) { if (!force) return; await loadingReleases; }
+  loadingReleases = loadReleasesNow();
+  try { await loadingReleases; } finally { loadingReleases = null; }
+}
+async function loadReleasesNow() {
   if (!artists.length) { releases = []; renderNews(); return; }
-  loadingReleases = true;
   if (!releases.length) renderNews(true); // l'écran de chargement seulement s'il n'y a encore rien à montrer
   try {
     ({ recent: releases, upcoming } = await catalogReleases(artists.map((a) => a.id), { country: config.country, days: 30 }));
@@ -808,8 +844,6 @@ async function loadReleases() {
     store.set("upcoming", upcoming);
   } catch {
     // pas de réseau : on garde la dernière liste affichée
-  } finally {
-    loadingReleases = false;
   }
   renderNews();
 }
