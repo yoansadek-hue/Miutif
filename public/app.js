@@ -57,8 +57,10 @@ function openInMusic(url) {
 }
 
 /** Petite fenêtre de confirmation. Renvoie true si l'utilisateur confirme. */
-function confirmBox(title, text, ok = "Supprimer") {
+function confirmBox(title, text, ok = "Supprimer", avatarHtml = "") {
   return new Promise((resolve) => {
+    $("#confirm-avatar").innerHTML = avatarHtml;
+    $("#confirm-avatar").hidden = !avatarHtml;
     $("#confirm-title").textContent = title;
     $("#confirm-text").textContent = text;
     $("#confirm-yes").textContent = ok;
@@ -514,7 +516,8 @@ function addArtists(list, { manual = false } = {}) {
 async function removeArtist(id) {
   const a = artists.find((x) => x.id === id);
   if (!a) return;
-  if (!(await askRemove(a))) return;
+  const pp = `${initial(a.name)}<img src="${photo(a.id)}" alt="">`;
+  if (!(await confirmBox("Supprimer cet artiste ?", `Voulez-vous vraiment supprimer ${a.name} ? Tu ne seras plus prévenu de ses sorties.`, "Supprimer", pp))) return;
   // la ligne devient rouge, glisse hors de la liste et se referme, puis l'artiste est retiré
   const li = document.querySelector(`#artists [data-remove="${CSS.escape(id)}"]`)?.closest("li");
   if (li && !reduced()) {
@@ -525,26 +528,6 @@ async function removeArtist(id) {
     await new Promise((r) => setTimeout(r, 560));
   }
   unfollowArtist(id);
-}
-
-/** Fenêtre du bas : photo et nom de l'artiste, « Ne plus suivre » en rouge, « Annuler ». */
-function askRemove(a) {
-  return new Promise((resolve) => {
-    const box = $("#delsheet");
-    $("#del-name").textContent = `Ne plus suivre ${a.name} ?`;
-    $("#del-avatar").innerHTML = `${initial(a.name)}<img src="${photo(a.id)}" alt="">`;
-    box.classList.remove("closing");
-    box.hidden = false;
-    const done = (ok) => {
-      box.classList.add("closing");
-      setTimeout(() => { box.hidden = true; box.classList.remove("closing"); }, 220);
-      $("#del-yes").onclick = $("#del-no").onclick = box.onclick = null;
-      resolve(ok);
-    };
-    $("#del-yes").onclick = () => done(true);
-    $("#del-no").onclick = () => done(false);
-    box.onclick = (e) => { if (e.target === box) done(false); }; // appui à côté = annuler
-  });
 }
 
 /** Ne plus suivre un artiste (il n'est plus rajouté par une playlist). */

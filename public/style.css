@@ -255,6 +255,8 @@ label.row { cursor: pointer; }
 @keyframes fade { from { opacity: 0; } }
 .box { width: min(280px, 100%); border-radius: 14px; background: var(--surface); text-align: center; overflow: hidden; }
 .box h3 { font-size: 17px; font-weight: 600; padding: 20px 16px 4px; }
+.confirm-avatar { width: 64px; height: 64px; font-size: 26px; margin: 22px auto 0; }
+.confirm-avatar + h3 { padding-top: 12px; }
 .box p { color: var(--muted); font-size: 14px; padding: 0 16px 18px; }
 .box-actions { display: grid; grid-template-columns: 1fr 1fr; box-shadow: inset 0 1px 0 var(--line); }
 .box-actions button { height: 46px; font-size: 17px; }
@@ -409,25 +411,6 @@ label.row { cursor: pointer; }
 .cover, .avatar img { animation: fadein 0.25s ease; }
 @keyframes fadein { from { opacity: 0; } }
 
-/* Suppression d'un artiste */
-/* au centre de l'écran, comme une alerte iPhone */
-.actionsheet {
-  position: fixed; inset: 0; z-index: 55; display: flex; flex-direction: column; justify-content: center; gap: 8px;
-  padding: 24px; background: rgba(0, 0, 0, 0.5); animation: fade 0.2s ease;
-}
-.actionsheet > * { max-width: 300px; width: 100%; margin: 0 auto; animation: pop 0.28s cubic-bezier(0.2, 1.3, 0.4, 1); }
-@keyframes pop { from { transform: scale(0.85); opacity: 0; } }
-.actionsheet.closing { animation: fade 0.18s ease reverse forwards; }
-.actionsheet.closing > * { animation: pop 0.18s ease-in reverse forwards; }
-.as-panel { border-radius: 14px; background: var(--surface); overflow: hidden; }
-.as-head { display: grid; justify-items: center; gap: 4px; padding: 20px 16px 16px; text-align: center; }
-.as-head b { font-size: 17px; }
-.as-head p { color: var(--muted); font-size: 13px; }
-.as-avatar { width: 64px; height: 64px; font-size: 26px; margin-bottom: 6px; }
-.as-btn { display: block; width: 100%; height: 50px; font-size: 17px; }
-.as-danger { color: var(--danger); font-weight: 600; box-shadow: inset 0 1px 0 var(--line); }
-.as-danger:active, .as-cancel:active { background: var(--surface-press); }
-.as-cancel { border-radius: 14px; background: var(--surface); font-weight: 600; }
 /* la ligne supprimée devient rouge, glisse hors de la liste puis se referme */
 .list > li.removing {
   background: rgba(255, 69, 58, 0.22); overflow: hidden;
