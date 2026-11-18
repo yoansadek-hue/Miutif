@@ -652,13 +652,22 @@ async function openArtist(id, fallbackName = "") {
   const { own = [], appearances = [] } = cat.status === "fulfilled" ? cat.value : {};
   const albums = own.filter((r) => r.kind === "Album");
   const singles = own.filter((r) => r.kind !== "Album");
-  const section = (title, items, row = discoRow) => items.length
-    ? `<h2 class="group-title">${title}</h2><ul class="list">${items.map(row).join("")}</ul>` : "";
+  // chaque section défile sur le côté (comme Apple Music) : la page reste courte
+  const tile = (r, sub) => `
+    <button class="tile" data-url="${esc(r.url)}">
+      <img src="${esc(r.artwork)}" alt="" loading="lazy" decoding="async">
+      <b>${esc(r.title)}</b>
+      <small>${esc(sub(r))}</small>
+    </button>`;
+  const year = (r) => new Date(r.date).getFullYear();
+  const section = (title, items, sub) => items.length
+    ? `<div class="sugg-head"><h2>${title}</h2><span class="count-sub">${items.length}</span></div>
+       <div class="carousel tiles">${items.map((r) => tile(r, sub)).join("")}</div>` : "";
   $("#sheet-disco").innerHTML = own.length || appearances.length
-    ? section("Dernières sorties", own.slice(0, 5)) +
-      section(`Albums · ${albums.length}`, albums) +
-      section(`Singles et EP · ${singles.length}`, singles) +
-      section(`Apparitions · ${appearances.length}`, appearances.slice(0, 30), appearanceRow)
+    ? section("Dernières sorties", own.slice(0, 10), (r) => `${r.kind} · ${shortDate(r.date)}`) +
+      section("Albums", albums, (r) => `${year(r)}`) +
+      section("Singles et EP", singles, (r) => `${r.kind} · ${year(r)}`) +
+      section("Apparitions", appearances, (r) => `chez ${r.artist}`)
     : '<p class="empty">Discographie indisponible pour le moment.</p>';
   similarList = info.status === "fulfilled" ? info.value.similar || [] : [];
   renderSimilar();
