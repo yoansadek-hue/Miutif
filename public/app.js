@@ -205,6 +205,7 @@ for (const ev of ["pointerup", "pointercancel"]) {
 })();
 
 const resetPull = [];
+const pullResume = {};
 // ---------- Tirer vers le bas : le rond se remplit, puis l'app se recharge entièrement ----------
 // (seulement tout en haut d'une page, pour un geste vraiment vertical ; rien ne bouge avant 24 px)
 (() => {
@@ -231,6 +232,7 @@ const resetPull = [];
         if (dy < DEAD || Math.abs(dx) > dy || sc.scrollTop > 0) { if (dy < -4 || Math.abs(dx) > 12) st = null; return; }
         st.on = true;
         sc.classList.add("pulling");
+        ptr.classList.add("dragging"); // le rond suit le doigt sans retard pendant qu'on tire
       }
       st.dy = dy - DEAD;
       const d = 110 * (1 - Math.exp(-st.dy / 110)); // le contenu suit le doigt, de plus en plus difficilement
@@ -245,13 +247,16 @@ const resetPull = [];
       const s = st;
       st = null;
       sc.classList.remove("pulling");
+      ptr.classList.remove("dragging"); // relâché : la page et le rond reviennent en douceur
       if (!s.on) return;
       if (s.dy < NEED) { set(sc, 0, 0); return; }
       busy = true;
       ptr.classList.add("spin");
       set(sc, 64, 1);
       haptic();
-      // rechargement complet, sur le même onglet, avec la toute dernière version (pas celle gardée en mémoire)
+      // rechargement complet, sur le même onglet, avec la toute dernière version (pas celle gardée en mémoire).
+      // L'app rouvre avec la page encore descendue et le rond qui tourne, puis tout remonte en douceur : pas de coupure.
+      try { sessionStorage.setItem("miutif.ptr", "1"); } catch {}
       const reload = () => location.replace(`/?tab=${current}`);
       Promise.race([
         (async () => { if ("caches" in window) for (const k of await caches.keys()) await caches.delete(k); })(),
@@ -260,8 +265,19 @@ const resetPull = [];
     };
     sc.addEventListener("touchend", end, { passive: true });
     sc.addEventListener("touchcancel", end, { passive: true });
-    resetPull.push(() => { if (!busy) { st = null; sc.classList.remove("pulling"); set(sc, 0, 0); } });
+    resetPull.push(() => { if (!busy) { st = null; sc.classList.remove("pulling"); ptr.classList.remove("dragging"); set(sc, 0, 0); } });
   }
+  // après le rechargement : on reprend là où le geste s'était arrêté, puis on remonte en douceur
+  pullResume.hold = (sc) => {
+    ptr.classList.add("dragging", "spin");
+    sc.classList.add("pulling");
+    set(sc, 64, 1);
+    requestAnimationFrame(() => requestAnimationFrame(() => { ptr.classList.remove("dragging"); sc.classList.remove("pulling"); }));
+  };
+  pullResume.release = (sc) => {
+    ptr.classList.remove("spin");
+    set(sc, 0, 0);
+  };
   // la fin du geste peut arriver ailleurs (doigt sorti de la zone, stylet…) : la page ne reste jamais descendue
   addEventListener("touchend", () => { if (!st) resetPull.forEach((f) => f()); }, { passive: true });
   document.addEventListener("visibilitychange", () => resetPull.forEach((f) => f()));
@@ -488,7 +504,6 @@ let lastResults = [];
 function updateSearchMode() {
   const searching = !!$("#q").value.trim();
   $("#artists").hidden = searching;
-  $("#suggestions").hidden = searching;
   updateIndex();
   $("#artists-empty").hidden = searching || artists.length > 0;
   if (!searching) { $("#results").hidden = true; lastResults = []; }
@@ -590,71 +605,56 @@ const appearanceRow = (r) => `
     </button>
   </li>`;
 
-/** Ligne d'artiste suggéré, avec son bouton Suivre / Suivi. */
-const suggestRow = (s, hint) => {
+let dismissed = new Set(store.get("dismissed", [])); // suggestions écartées avec la croix
+
+/** Carte d'artiste suggéré : photo, nom, « Similaire à … », bouton Suivre, croix pour l'écarter. */
+const suggestCard = (s, because) => {
   const on = artists.some((a) => a.id === s.id);
   return `
-  <li>
-    <button class="main" data-open="${esc(s.id)}" data-name="${esc(s.name)}">
-      <span class="avatar">${initial(s.name)}${s.image ? `<img src="${esc(s.image)}" alt="" loading="lazy">` : `<img src="${photo(s.id)}" alt="" loading="lazy">`}</span>
-      <span class="lines"><b>${esc(s.name)}</b>${hint ? `<span class="hint">${esc(hint)}</span>` : ""}</span>
+  <div class="card" data-card="${esc(s.id)}">
+    <button class="dismiss" data-dismiss="${esc(s.id)}" aria-label="Ne plus suggérer ${esc(s.name)}">${ICON_X}</button>
+    <button class="open" data-open="${esc(s.id)}" data-name="${esc(s.name)}">
+      <span class="avatar">${initial(s.name)}<img src="${esc(s.image || photo(s.id))}" alt="" loading="lazy"></span>
+      <b>${esc(s.name)}</b>
+      <small>Similaire à ${esc(because)}</small>
     </button>
-    <button class="follow${on ? " on" : ""}" data-toggle-follow="${esc(s.id)}" data-name="${esc(s.name)}">${on ? "Suivi" : "Suivre"}</button>
-  </li>`;
+    <button class="follow-btn${on ? " on" : ""}" data-toggle-follow="${esc(s.id)}" data-name="${esc(s.name)}">${on ? "Suivi" : "Suivre"}</button>
+  </div>`;
 };
 
 function renderSimilar() {
-  $("#sheet-similar").innerHTML = similarList.length
-    ? `<h2 class="group-title">Artistes similaires · suggestions</h2><ul class="list">${similarList.map((s) => suggestRow(s)).join("")}</ul>`
+  const list = similarList.filter((s) => !dismissed.has(s.id));
+  $("#sheet-similar").innerHTML = list.length
+    ? `<div class="sugg-head"><h2>Suggestions pour vous</h2></div>
+       <div class="carousel">${list.map((s) => suggestCard(s, $("#sheet-name").textContent)).join("")}</div>`
     : "";
 }
 
-/** Suivre / ne plus suivre depuis une suggestion. */
+/** Écarte une suggestion (elle ne revient plus). */
+function dismissSuggestion(id) {
+  dismissed.add(id);
+  store.set("dismissed", [...dismissed]);
+  const card = document.querySelector(`#sheet-similar [data-card="${CSS.escape(id)}"]`);
+  if (!card) return;
+  card.classList.add("gone");
+  setTimeout(() => { card.remove(); if (!document.querySelector("#sheet-similar .card")) $("#sheet-similar").innerHTML = ""; }, 200);
+}
+
+/** Suivre / ne plus suivre depuis une suggestion (le bouton change sur place, la liste ne bouge pas). */
 function toggleFollow(id, name) {
   if (artists.some((a) => a.id === id)) unfollowArtist(id);
   else if (addArtists([{ id, name }], { manual: true })) loadReleasesSoon();
   haptic();
-  renderSimilar();
-  renderSuggestions();
+  const on = artists.some((x) => x.id === id);
+  document.querySelectorAll(`#sheet-similar [data-toggle-follow="${CSS.escape(id)}"]`).forEach((b) => {
+    b.textContent = on ? "Suivi" : "Suivre";
+    b.classList.toggle("on", on);
+  });
   if (sheetArtist === id) { // c'est l'artiste de la fiche ouverte : son bouton Suivre se met à jour aussi
     const on = artists.some((x) => x.id === id);
     $("#sheet-follow").textContent = on ? "Suivi ✓" : "Suivre";
     $("#sheet-follow").classList.toggle("on", on);
   }
-}
-
-// ---------- Suggestions pour toi (artistes similaires à ceux que tu suis) ----------
-
-let suggestions = store.get("suggest", { at: 0, list: [] });
-
-function renderSuggestions() {
-  const box = $("#suggestions");
-  const list = (suggestions.list || []).filter((s) => !artists.some((a) => a.id === s.id) && !excluded.has(s.id)).slice(0, 5);
-  box.innerHTML = list.length
-    ? `<h2 class="group-title sugg-title">Suggestions pour toi</h2><ul class="list">${list.map((s) => suggestRow(s, s.because ? `Comme ${s.because}` : "")).join("")}</ul>`
-    : "";
-}
-
-async function loadSuggestions() {
-  if (artists.length < 3 || Date.now() - (suggestions.at || 0) < 12 * 3600000) { renderSuggestions(); return; }
-  const followed = new Set(artists.map((a) => a.id));
-  const sample = [...artists].sort(() => Math.random() - 0.5).slice(0, 8);
-  const score = new Map();
-  await Promise.all(sample.map(async (a) => {
-    try {
-      const info = await api(`artist/${a.id}`);
-      (info.similar || []).forEach((s, i) => {
-        if (followed.has(s.id) || excluded.has(s.id)) return;
-        const e = score.get(s.id) || { ...s, n: 0, because: a.name };
-        e.n += 12 - i; // plus il est proche (et souvent cité), plus il remonte
-        score.set(s.id, e);
-      });
-    } catch {}
-  }));
-  if (!score.size) { renderSuggestions(); return; }
-  suggestions = { at: Date.now(), list: [...score.values()].sort((x, y) => y.n - x.n).slice(0, 12).map(({ id, name, image, because }) => ({ id, name, image, because })) };
-  store.set("suggest", suggestions);
-  renderSuggestions();
 }
 
 // ---------- Nouveautés ----------
@@ -1033,7 +1033,7 @@ function closeSheet(from = 0) {
 
 let swipe = null;
 sheet.addEventListener("touchstart", (e) => {
-  if (e.touches.length !== 1 || sheet.classList.contains("leaving") || isSplit()) return;
+  if (e.touches.length !== 1 || sheet.classList.contains("leaving") || isSplit() || e.target.closest(".carousel")) return;
   const t = e.touches[0];
   swipe = { x0: t.clientX, y0: t.clientY, dx: 0, t0: performance.now(), dir: null };
 }, { passive: true });
@@ -1082,14 +1082,14 @@ $("#results").addEventListener("click", (e) => {
   const open = e.target.closest("[data-open]");
   if (open) openArtist(open.dataset.open, open.dataset.name);
 });
-for (const sel of ["#suggestions", "#sheet-similar"]) {
-  $(sel).addEventListener("click", (e) => {
-    const f = e.target.closest("[data-toggle-follow]");
-    if (f) return toggleFollow(f.dataset.toggleFollow, f.dataset.name);
-    const open = e.target.closest("[data-open]");
-    if (open) openArtist(open.dataset.open, open.dataset.name);
-  });
-}
+$("#sheet-similar").addEventListener("click", (e) => {
+  const f = e.target.closest("[data-toggle-follow]");
+  if (f) return toggleFollow(f.dataset.toggleFollow, f.dataset.name);
+  const x = e.target.closest("[data-dismiss]");
+  if (x) return dismissSuggestion(x.dataset.dismiss);
+  const open = e.target.closest("[data-open]");
+  if (open) openArtist(open.dataset.open, open.dataset.name);
+});
 $("#artists").addEventListener("click", (e) => {
   const rm = e.target.closest("[data-remove]")?.dataset.remove;
   if (rm) return removeArtist(rm);
@@ -1234,6 +1234,10 @@ async function start() {
   const params = new URLSearchParams(location.search);
   if (params.has("open") || params.has("tab")) history.replaceState(null, "", "/");
   showTab(params.get("tab") || "new");
+  let resumed = false;
+  try { resumed = sessionStorage.getItem("miutif.ptr") === "1"; sessionStorage.removeItem("miutif.ptr"); } catch {}
+  const resumedAt = performance.now();
+  if (resumed) pullResume.hold($(`#scroll-${current}`));
   if (params.get("open")) openInMusic(params.get("open"));
 
   $("#install").hidden = !(isIOS && !standalone);
@@ -1265,8 +1269,13 @@ async function start() {
   const sub = await renderNotifState();
   if (sub && Notification.permission === "granted") sync({ subscription: sub.toJSON() }).catch(() => {});
 
-  loadReleases();
-  loadSuggestions();
+  const ready = loadReleases();
+  if (resumed) {
+    // le rond tourne le temps que les sorties arrivent (au moins un instant, au plus 2 s), puis tout remonte
+    await Promise.race([ready, new Promise((r) => setTimeout(r, 2000))]);
+    await new Promise((r) => setTimeout(r, Math.max(0, 450 - (performance.now() - resumedAt))));
+    pullResume.release($(`#scroll-${current}`));
+  }
   if (await refreshPlaylists()) loadReleasesSoon();
 }
 

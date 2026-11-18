@@ -299,8 +299,10 @@ label.row { cursor: pointer; }
 /* le rond de chargement d'iOS : 8 traits gris en étoile, sans fond, centré dans l'espace qui s'ouvre au-dessus de la page */
 .ptr {
   position: fixed; left: 50%; top: var(--top); z-index: 30; width: 28px; height: 28px; margin-left: -14px;
-  pointer-events: none;
+  pointer-events: none; transition: transform 0.4s cubic-bezier(0.2, 0.8, 0.2, 1), opacity 0.3s;
 }
+.ptr.dragging { transition: none; }
+.ptr i { transition: opacity 0.25s; }
 .ptr i {
   position: absolute; left: 12.5px; top: 1px; width: 3px; height: 8px; border-radius: 2px;
   background: #9b9ba1; transform-origin: 1.5px 13px; transform: rotate(calc(var(--i) * 45deg));
@@ -310,7 +312,7 @@ label.row { cursor: pointer; }
 /* en rotation : chaque trait s'estompe à tour de rôle, comme sur iPhone */
 .ptr.spin i { opacity: 1; animation: spoke 0.8s linear infinite; animation-delay: calc(var(--i) * 0.1s - 0.8s); }
 @keyframes spoke { 0% { opacity: 1; } 100% { opacity: 0.22; } }
-.tab-scroller > .page { transform: translateY(var(--pull, 0px)); transition: transform 0.35s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.tab-scroller > .page { transform: translateY(var(--pull, 0px)); transition: transform 0.45s cubic-bezier(0.2, 0.8, 0.2, 1); }
 .tab-scroller.pulling > .page { transition: none; }
 
 /* ---------- iPad (et grands écrans) ---------- */
@@ -364,10 +366,28 @@ label.row { cursor: pointer; }
 .tab-scroller.peek { visibility: visible; }
 .tab-scroller.moving { will-change: transform; backface-visibility: hidden; }
 
-/* Suggestions et artistes similaires */
-.sugg-title { padding-top: 4px; }
-#suggestions .list { margin-bottom: 4px; }
-.lines .hint { font-size: 13px; }
+/* Suggestions de la fiche artiste, en cartes qui défilent sur le côté (comme Instagram) */
+.sugg-head { display: flex; justify-content: space-between; align-items: baseline; margin: 22px 4px 10px; }
+.sugg-head h2 { font-size: 17px; font-weight: 700; }
+.carousel {
+  display: flex; gap: 10px; overflow-x: auto; overflow-y: hidden; scroll-snap-type: x mandatory;
+  margin: 0 -16px; padding: 0 16px 4px; scroll-padding: 0 16px;
+  -webkit-overflow-scrolling: touch; overscroll-behavior-x: contain; touch-action: pan-x pan-y; scrollbar-width: none;
+}
+.carousel::-webkit-scrollbar { display: none; }
+.card {
+  position: relative; flex: 0 0 150px; scroll-snap-align: start; display: grid; justify-items: center; align-content: start;
+  padding: 18px 12px 12px; border-radius: 14px; background: var(--surface); text-align: center;
+}
+.card .open { display: grid; justify-items: center; gap: 2px; width: 100%; }
+.card .avatar { width: 86px; height: 86px; font-size: 32px; margin-bottom: 10px; }
+.card b { max-width: 100%; font-size: 15px; font-weight: 700; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card small { max-width: 100%; color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.card .follow-btn { margin-top: 12px; width: 100%; height: 32px; border-radius: 8px; background: var(--accent); color: #fff; font-size: 14px; font-weight: 600; }
+.card .follow-btn.on { background: var(--surface-press); color: var(--text); }
+.card .dismiss { position: absolute; top: 6px; right: 6px; width: 28px; height: 28px; display: grid; place-items: center; color: var(--muted); }
+.card .dismiss svg { width: 16px; height: 16px; }
+.card.gone { opacity: 0; transform: scale(0.9); transition: opacity 0.2s, transform 0.2s; }
 .main.sel { background: var(--surface-press); }
 
 /* iPad paysage : liste à gauche, fiche à droite (comme l'app Musique) */
