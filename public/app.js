@@ -1321,6 +1321,9 @@ async function start() {
   try {
     const saved = await api(`user?id=${userId}`);
     for (const id of saved.excluded || []) excluded.add(String(id));
+    // un artiste supprimé ailleurs (autre appareil, compte transféré) est retiré ici aussi
+    const kept = artists.filter((x) => !excluded.has(x.id));
+    if (kept.length !== artists.length) { artists = kept; store.set("artists", artists); renderArtists(); }
     const knownUrls = new Set(playlists.map((p) => p.url));
     playlists = [...playlists, ...(saved.playlists || []).filter((p) => !knownUrls.has(p.url))];
     const before = artists.length;
