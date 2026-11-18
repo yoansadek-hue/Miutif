@@ -34,9 +34,32 @@ export default {
   },
 
   async scheduled(event, env, ctx) {
-    ctx.waitUntil(hourlyRun(env, new Date(event.scheduledTime)));
+    // à :45 : on lance le robot GitHub (ses propres horaires ne sont pas fiables) ; à :00 : playlists et notifications
+    if (event.cron === ROBOT_CRON) ctx.waitUntil(startRobot(env));
+    else ctx.waitUntil(hourlyRun(env, new Date(event.scheduledTime)));
   },
 };
+
+// ---------- Lancement du robot GitHub ----------
+// GitHub ne garantit pas ses tâches planifiées (sur un petit dépôt, elles peuvent sauter des heures entières).
+// Le réveil de Cloudflare, lui, est précis : il lance le robot à :45 chaque heure (donc à 10 h 45, avant la notif de 11 h).
+// Il faut un jeton GitHub (secret GITHUB_TOKEN) autorisé à lancer les « Actions » du dépôt.
+const ROBOT_CRON = "45 * * * *";
+async function startRobot(env) {
+  if (!env.GITHUB_TOKEN) return 0;
+  const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO || "yoansadek-hue/Miutif"}/actions/workflows/sorties.yml/dispatches`, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${env.GITHUB_TOKEN}`,
+      Accept: "application/vnd.github+json",
+      "User-Agent": "miutif-worker",
+      "X-GitHub-Api-Version": "2022-11-28",
+    },
+    body: JSON.stringify({ ref: "main" }),
+  });
+  if (!res.ok) console.error("Lancement du robot refusé :", res.status, await res.text());
+  return res.status;
+}
 
 // ---------- API ----------
 
@@ -76,6 +99,16 @@ async function api(request, url, env) {
       const parsed = parsePlaylistPage(await res.text());
       if (!parsed) return json({ error: "Impossible de lire cette playlist" }, 502);
       return json(parsed);
+    }
+
+    // Dernière mise à jour des sorties par le robot (affichée dans Réglages)
+    case "GET /api/status": {
+      try {
+        const data = await releaseData(env);
+        return json({ updated: data.updated || null }, 200, "public, max-age=60");
+      } catch {
+        return json({ updated: null });
+      }
     }
 
     // Pour le robot : tous les artistes suivis (identifiants publics, sans lien avec les utilisateurs)

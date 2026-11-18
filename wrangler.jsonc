@@ -9,6 +9,7 @@
   // Fichier des sorties publié chaque heure par le robot GitHub (.github/workflows/sorties.yml)
   "vars": { "DATA_URL": "https://raw.githubusercontent.com/yoansadek-hue/Miutif/data/releases.json" },
   // Réveil toutes les heures : chaque téléphone est notifié quand il est 11 h chez lui.
-  "triggers": { "crons": ["0 * * * *"] },
+  // et à :45, il lance le robot GitHub (secret GITHUB_TOKEN), pour des nouveautés toujours fraîches.
+  "triggers": { "crons": ["0 * * * *", "45 * * * *"] },
   "observability": { "enabled": true }
 }

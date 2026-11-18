@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, recentReleases, playlistUrl, discography, featOf } from "./music.js?v=11";
+import { searchArtists, playlistUrl, discography, featOf, catalogReleases } from "./music.js?v=12";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -21,6 +21,9 @@ let artists = store.get("artists", []);
 let playlists = store.get("playlists", []);
 let excluded = new Set(store.get("excluded", [])); // artistes retirés à la main : les playlists ne les rajoutent pas
 let releases = store.get("releases", []);
+let upcoming = store.get("upcoming", []);               // sorties à venir (précommandes)
+let newsFilter = store.get("filter", "all");            // Tout, Albums, Singles, Feats
+let seen = new Set(store.get("seen", []));              // sorties déjà ouvertes (sans pastille)
 let config = { hour: 11, appleMusic: false, vapidKey: null, country: store.get("country", "fr") };
 
 // ---------- Utilitaires ----------
@@ -100,6 +103,7 @@ function showTab(tab) {
   BTNS.forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   pillTo(BTNS.find((b) => b.dataset.tab === tab), !first);
   updateIndex();
+  if (tab === "settings") loadStatus();
 }
 
 // ---------- Index A à Z de la liste des artistes (comme les Contacts) ----------
@@ -116,7 +120,6 @@ const azSpans = () => [...azEl.querySelectorAll("span")];
 function updateIndex() {
   const show = current === "artists" && !$("#q").value.trim() && artists.length >= 15 && $("#sheet").hidden;
   azEl.hidden = !show;
-  $("#tab-artists").classList.toggle("with-az", show);
   azSpans().forEach((el) => el.classList.toggle("dim", !presentLetters.includes(el.dataset.l)));
   if (show) markCurrentLetter();
 }
@@ -137,9 +140,18 @@ function markCurrentLetter() {
   }
   setCurLetter(cur);
 }
-let azRaf = 0;
+let azRaf = 0, azHide = 0;
+/** L'index se montre pendant qu'on fait défiler la liste, puis s'efface. */
+function revealIndex() {
+  if (azEl.hidden) return;
+  azEl.classList.add("visible");
+  clearTimeout(azHide);
+  azHide = setTimeout(() => { if (!azEl.classList.contains("active")) azEl.classList.remove("visible"); }, 1400);
+}
 $("#scroll-artists").addEventListener("scroll", () => {
-  if (azEl.hidden || azRaf) return;
+  if (azEl.hidden) return;
+  revealIndex();
+  if (azRaf) return;
   azRaf = requestAnimationFrame(() => { azRaf = 0; markCurrentLetter(); });
 }, { passive: true });
 
@@ -179,6 +191,7 @@ for (const ev of ["pointerup", "pointercancel"]) {
     azEl.classList.remove("active");
     azBubble.classList.remove("show");
     markCurrentLetter();
+    revealIndex(); // reste visible un instant puis s'efface
   });
 }
 
@@ -192,6 +205,7 @@ for (const ev of ["pointerup", "pointercancel"]) {
   }, { passive: true });
 })();
 
+const resetPull = [];
 // ---------- Tirer vers le bas : le rond se remplit, puis l'app se recharge entièrement ----------
 // (seulement tout en haut d'une page, pour un geste vraiment vertical ; rien ne bouge avant 24 px)
 (() => {
@@ -207,8 +221,9 @@ for (const ev of ["pointerup", "pointercancel"]) {
   for (const t of TABS) {
     const sc = $(`#scroll-${t}`);
     sc.addEventListener("touchstart", (e) => {
-      st = !busy && sc.scrollTop <= 0 && e.touches.length === 1
-        ? { sc, x: e.touches[0].clientX, y: e.touches[0].clientY, on: false, dy: 0, ready: false } : null;
+      const t = e.touches[0];
+      st = !busy && sc.scrollTop <= 0 && e.touches.length === 1 && t.touchType !== "stylus"
+        ? { sc, x: t.clientX, y: t.clientY, on: false, dy: 0, ready: false } : null;
     }, { passive: true });
     sc.addEventListener("touchmove", (e) => {
       if (!st || st.sc !== sc) return;
@@ -237,11 +252,20 @@ for (const ev of ["pointerup", "pointercancel"]) {
       ptr.classList.add("spin");
       set(sc, 64, 1);
       haptic();
-      setTimeout(() => location.replace(`/?tab=${current}`), 700); // rechargement complet, sur le même onglet
+      // rechargement complet, sur le même onglet, avec la toute dernière version (pas celle gardée en mémoire)
+      const reload = () => location.replace(`/?tab=${current}`);
+      Promise.race([
+        (async () => { if ("caches" in window) for (const k of await caches.keys()) await caches.delete(k); })(),
+        new Promise((r) => setTimeout(r, 900)),
+      ]).finally(() => setTimeout(reload, 300));
     };
     sc.addEventListener("touchend", end, { passive: true });
     sc.addEventListener("touchcancel", end, { passive: true });
+    resetPull.push(() => { if (!busy) { st = null; sc.classList.remove("pulling"); set(sc, 0, 0); } });
   }
+  // la fin du geste peut arriver ailleurs (doigt sorti de la zone, stylet…) : la page ne reste jamais descendue
+  addEventListener("touchend", () => { if (!st) resetPull.forEach((f) => f()); }, { passive: true });
+  document.addEventListener("visibilitychange", () => resetPull.forEach((f) => f()));
 })();
 
 /**
@@ -381,6 +405,11 @@ function dragEnd(e, cancel) {
 bar.addEventListener("pointerup", (e) => dragEnd(e));
 bar.addEventListener("pointercancel", (e) => dragEnd(e, true));
 addEventListener("resize", () => pillTo(BTNS.find((b) => b.classList.contains("on")), false));
+// au lancement, la barre n'a pas encore sa taille finale : on recale la bulle dès qu'elle change
+const replacePill = () => { if (!drag) pillTo(BTNS.find((b) => b.classList.contains("on")), false); };
+if ("ResizeObserver" in window) new ResizeObserver(replacePill).observe(bar);
+addEventListener("load", replacePill);
+document.fonts?.ready.then(replacePill);
 
 // ---------- Artistes ----------
 
@@ -554,12 +583,14 @@ function dayLabel(date) {
   return { big: cap, small: "" };
 }
 
+const featFor = (r) => featOf(r, artists.find((a) => a.id === r.artistId)?.name);
 const releaseRow = (r) => {
-  const feat = featOf(r, artists.find((a) => a.id === r.artistId)?.name);
+  const feat = featFor(r);
   return `
   <li>
-    <button class="main" data-url="${esc(r.url)}">
-      <img class="cover" src="${esc(r.artwork)}" alt="" loading="lazy">
+    <button class="main" data-url="${esc(r.url)}" data-id="${esc(r.id)}">
+      ${seen.has(r.id) ? "" : '<span class="udot" aria-label="Pas encore écouté"></span>'}
+      <img class="cover" src="${esc(r.artwork)}" alt="" loading="lazy" decoding="async">
       <span class="lines">
         <b>${esc(r.title)}</b>
         <span>${esc(r.artist)} · ${esc(r.kind)}</span>
@@ -570,30 +601,99 @@ const releaseRow = (r) => {
   </li>`;
 };
 
+/** Filtre choisi : Tout, Albums (et EP), Singles, Feats. */
+function applyFilter(list) {
+  if (newsFilter === "albums") return list.filter((r) => r.kind !== "Single" && !featFor(r));
+  if (newsFilter === "singles") return list.filter((r) => r.kind === "Single" && !featFor(r));
+  if (newsFilter === "feats") return list.filter((r) => featFor(r));
+  return list;
+}
+
+function countdown(iso) {
+  const today = new Date(); today.setHours(0, 0, 0, 0);
+  const d = new Date(iso); d.setHours(0, 0, 0, 0);
+  const days = Math.round((d - today) / 86400000);
+  return days <= 0 ? "Aujourd'hui" : days === 1 ? "Demain" : `Dans ${days} jours`;
+}
+
+function renderUpcoming() {
+  const list = applyFilter(upcoming);
+  $("#upcoming").innerHTML = list.length ? `
+    <section class="day upcoming">
+      <div class="day-head"><h2>À venir</h2><p>${plural(list.length, "sortie")} annoncée${list.length > 1 ? "s" : ""}</p></div>
+      <ul class="list">${list.map((r) => `
+        <li>
+          <button class="main" data-url="${esc(r.url)}">
+            <img class="cover" src="${esc(r.artwork)}" alt="" loading="lazy" decoding="async">
+            <span class="lines">
+              <b>${esc(r.title)}</b>
+              <span>${esc(r.artist)} · ${esc(r.kind)} · ${new Date(r.date).toLocaleDateString("fr-FR", { day: "numeric", month: "long" })}</span>
+              ${featFor(r) ? `<span class="feat">feat. ${esc(featFor(r))}</span>` : ""}
+            </span>
+            <span class="countdown">${countdown(r.date)}</span>
+          </button>
+        </li>`).join("")}
+      </ul>
+    </section>` : "";
+}
+
+/** Pastille sur l'onglet Nouveautés : il reste des sorties de la semaine pas encore écoutées. */
+function renderNewDot() {
+  const week = Date.now() - 7 * 86400000;
+  $("#new-dot").hidden = !releases.some((r) => !seen.has(r.id) && Date.parse(r.date) >= week);
+  $("#mark-all").hidden = !releases.some((r) => !seen.has(r.id));
+}
+
+function markSeen(ids) {
+  let changed = false;
+  for (const id of ids) if (id && !seen.has(id)) { seen.add(id); changed = true; }
+  if (!changed) return;
+  // on ne garde que les sorties encore affichées (la liste ne grossit pas indéfiniment)
+  const keep = new Set([...releases, ...upcoming].map((r) => r.id));
+  seen = new Set([...seen].filter((id) => keep.has(id)));
+  store.set("seen", [...seen]);
+  renderNewDot();
+}
+
+function renderFilters() {
+  document.querySelectorAll("#filters button").forEach((b) => {
+    b.classList.toggle("on", b.dataset.f === newsFilter);
+    b.setAttribute("aria-checked", String(b.dataset.f === newsFilter));
+  });
+}
+
+let lastNewsHtml = null;
 function renderNews(loading = false) {
   const box = $("#news");
+  renderUpcoming();
+  renderNewDot();
   if (loading && !releases.length && artists.length) {
     box.innerHTML = `<ul class="list">${'<li class="skeleton"></li>'.repeat(4)}</ul>`;
+    lastNewsHtml = null; // le squelette sera toujours remplacé, même par une liste vide
     $("#news-empty").hidden = true;
     return;
   }
-  $("#news-empty").hidden = releases.length > 0;
+  const shown = applyFilter(releases);
+  $("#news-empty").hidden = shown.length > 0;
   if (!artists.length) $("#news-empty").textContent = "Ajoute des artistes (onglet Artistes) ou une playlist (Réglages).";
+  else if (releases.length) $("#news-empty").textContent = "Rien dans ce filtre ces 30 derniers jours.";
   else $("#news-empty").textContent = "Aucune sortie ces 30 derniers jours pour tes artistes.";
 
   const groups = new Map();
-  for (const r of releases) {
+  for (const r of shown) {
     const key = new Date(r.date).toDateString();
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push(r);
   }
-  box.innerHTML = [...groups].map(([key, list]) => {
+  const html = [...groups].map(([key, list]) => {
     const { big, small } = dayLabel(key);
     return `<section class="day">
       <div class="day-head"><h2>${big}</h2>${small ? `<p>${small}</p>` : ""}</div>
       <ul class="list">${list.map(releaseRow).join("")}</ul>
     </section>`;
   }).join("");
+  // rien de changé : on ne retouche pas la page (pas de clignotement ni d'images rechargées)
+  if (html !== lastNewsHtml) { box.innerHTML = html; lastNewsHtml = html; }
 }
 
 let loadingReleases = false;
@@ -601,10 +701,11 @@ async function loadReleases() {
   if (loadingReleases) return;
   if (!artists.length) { releases = []; renderNews(); return; }
   loadingReleases = true;
-  renderNews(true);
+  if (!releases.length) renderNews(true); // l'écran de chargement seulement s'il n'y a encore rien à montrer
   try {
-    releases = await recentReleases(artists.map((a) => a.id), { country: config.country, days: 30 });
+    ({ recent: releases, upcoming } = await catalogReleases(artists.map((a) => a.id), { country: config.country, days: 30 }));
     store.set("releases", releases);
+    store.set("upcoming", upcoming);
   } catch {
     // pas de réseau : on garde la dernière liste affichée
   } finally {
@@ -902,12 +1003,170 @@ $("#artists").addEventListener("click", (e) => {
   const open = e.target.closest("[data-open]")?.dataset.open;
   if (open) openArtist(open);
 });
-for (const sel of ["#news", "#sheet-disco"]) {
+for (const sel of ["#news", "#upcoming", "#sheet-disco"]) {
   $(sel).addEventListener("click", (e) => {
-    const url = e.target.closest("[data-url]")?.dataset.url;
-    if (url) openInMusic(url);
+    const row = e.target.closest("[data-url]");
+    if (!row) return;
+    if (row.dataset.id) { markSeen([row.dataset.id]); row.querySelector(".udot")?.remove(); lastNewsHtml = null; }
+    openInMusic(row.dataset.url);
   });
 }
+$("#filters").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-f]");
+  if (!b || b.dataset.f === newsFilter) return;
+  newsFilter = b.dataset.f;
+  store.set("filter", newsFilter);
+  renderFilters();
+  renderNews();
+  haptic();
+});
+$("#mark-all").addEventListener("click", () => {
+  markSeen([...releases, ...upcoming].map((r) => r.id));
+  lastNewsHtml = null;
+  renderNews();
+});
+
+// ---------- Code de récupération ----------
+
+const formatCode = (id) => id.toUpperCase().match(/.{1,4}/g).join("-");
+
+function renderRecovery() {
+  $("#recovery-code").textContent = formatCode(userId);
+}
+
+$("#recovery-copy").addEventListener("click", async () => {
+  const btn = $("#recovery-copy");
+  try { await navigator.clipboard.writeText(formatCode(userId)); btn.textContent = "Code copié ✓"; }
+  catch { btn.textContent = "Appuie longuement sur le code pour le copier"; }
+  setTimeout(() => { btn.textContent = "Copier le code"; }, 2200);
+});
+
+/** Remplace les données de cet appareil par celles du compte du code. */
+async function restoreFromCode(raw) {
+  const id = String(raw || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  if (!/^[a-z0-9]{16,40}$/.test(id)) throw new Error("Ce code n'est pas valide.");
+  if (id === userId) throw new Error("C'est déjà le code de cet appareil.");
+  const saved = await api(`user?id=${id}`);
+  if (!saved.artists?.length && !saved.playlists?.length) throw new Error("Aucun compte trouvé pour ce code.");
+  await sync({ subscription: null }).catch(() => {}); // l'ancien compte de cet appareil ne reçoit plus de notifications
+  userId = id;
+  store.set("id", id);
+  artists = saved.artists || [];
+  playlists = saved.playlists || [];
+  excluded = new Set((saved.excluded || []).map(String));
+  store.set("artists", artists);
+  store.set("playlists", playlists);
+  store.set("excluded", [...excluded]);
+  releases = []; upcoming = [];
+  renderArtists(); renderPlaylists(); renderRecovery();
+  const sub = await currentSubscription();
+  if (sub && Notification.permission === "granted") await sync({ subscription: sub.toJSON() }).catch(() => {});
+  loadReleases();
+}
+
+async function restoreFrom(inputSel, btnSel, errSel, after) {
+  const btn = $(btnSel), err = $(errSel), label = btn.textContent;
+  err.hidden = true;
+  btn.disabled = true;
+  btn.textContent = "Restauration…";
+  try {
+    await restoreFromCode($(inputSel).value);
+    $(inputSel).value = "";
+    btn.textContent = "Restauré ✓";
+    setTimeout(() => { btn.textContent = label; }, 2000);
+    after?.();
+  } catch (e) {
+    err.textContent = e.message;
+    err.hidden = false;
+    btn.textContent = label;
+  } finally {
+    btn.disabled = false;
+  }
+}
+$("#restore-btn").addEventListener("click", () => restoreFrom("#restore-code", "#restore-btn", "#restore-error"));
+$("#ob-restore-toggle").addEventListener("click", () => { $("#ob-restore").hidden = !$("#ob-restore").hidden; if (!$("#ob-restore").hidden) $("#ob-restore-code").focus(); });
+$("#ob-restore-btn").addEventListener("click", () => restoreFrom("#ob-restore-code", "#ob-restore-btn", "#ob-restore-error", () => {
+  store.set("onboarded", true);
+  $("#onboard").hidden = true;
+  showTab("new");
+}));
+
+// ---------- Dernière mise à jour des sorties (le robot tourne-t-il ?) ----------
+
+let statusAt = 0;
+async function loadStatus() {
+  if (Date.now() - statusAt < 60000) return;
+  statusAt = Date.now();
+  const el = $("#last-update");
+  try {
+    const { updated } = await api("status");
+    if (!updated) { el.textContent = "Inconnue"; return; }
+    const min = Math.max(0, Math.round((Date.now() - Date.parse(updated)) / 60000));
+    const ago = min < 1 ? "à l'instant" : min < 60 ? `il y a ${min} min` : `il y a ${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")}`;
+    const late = min > 3 * 60;
+    el.textContent = late ? `⚠ ${ago}` : ago;
+    el.classList.toggle("warn", late);
+    $("#update-foot").textContent = late
+      ? "La recherche des nouveautés a du retard : le robot ne tourne peut-être plus. Les nouveautés reviendront à son prochain passage."
+      : "Les nouveautés sont recherchées à minuit, à 6 h, à 10 h 50, puis toutes les heures.";
+  } catch {
+    el.textContent = "Hors connexion";
+  }
+}
+
+// ---------- Glisser à gauche / à droite pour changer d'onglet (la bulle de la barre suit) ----------
+(() => {
+  const vp = $(".viewport");
+  let g = null;
+  const W = () => vp.clientWidth;
+  const els = () => TABS.map((t) => $(`#scroll-${t}`));
+  vp.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || !sheet.hidden || azEl.classList.contains("active")) { g = null; return; }
+    const t = e.touches[0];
+    g = { x0: t.clientX, y0: t.clientY, dx: 0, t0: performance.now(), dir: null, idx: TABS.indexOf(current) };
+  }, { passive: true });
+  vp.addEventListener("touchmove", (e) => {
+    if (!g) return;
+    const t = e.touches[0], dx = t.clientX - g.x0, dy = t.clientY - g.y0;
+    if (!g.dir) {
+      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
+      g.dir = Math.abs(dx) > Math.abs(dy) * 1.3 ? "x" : "y";
+      if (g.dir === "x") {
+        $("#q").blur();
+        els().forEach((el, i) => { if (Math.abs(i - g.idx) === 1) el.classList.add("peek"); });
+      }
+    }
+    if (g.dir !== "x") return;
+    if (e.cancelable) e.preventDefault();
+    let d = dx;
+    if ((g.idx === 0 && d > 0) || (g.idx === TABS.length - 1 && d < 0)) d *= 0.25; // pas d'onglet de ce côté : ça résiste
+    g.dx = d;
+    els().forEach((el, i) => { el.style.transform = `translateX(${(i - g.idx) * W() + d}px)`; });
+    // la bulle de la barre suit les pages
+    const p = -d / W(), next = BTNS[g.idx + Math.sign(p)];
+    const from = BTNS[g.idx].offsetLeft;
+    place(next ? from + (next.offsetLeft - from) * Math.min(1, Math.abs(p)) : from + -d * 0.05);
+  }, { passive: false });
+  const end = () => {
+    if (!g) return;
+    const s = g;
+    g = null;
+    if (s.dir !== "x") return;
+    const speed = Math.abs(s.dx) / Math.max(1, performance.now() - s.t0);
+    let to = s.idx;
+    if ((Math.abs(s.dx) > W() * 0.3 || speed > 0.5) && Math.abs(s.dx) > 30) to = Math.max(0, Math.min(TABS.length - 1, s.idx - Math.sign(s.dx)));
+    const list = els();
+    list.forEach((el, i) => { el.classList.add("swipe-anim"); el.style.transform = `translateX(${(i - to) * W()}px)`; });
+    if (to !== s.idx) haptic();
+    pillTo(BTNS[to], true);
+    setTimeout(() => {
+      list.forEach((el) => { el.classList.remove("swipe-anim", "peek"); el.style.transform = ""; });
+      showTab(TABS[to]);
+    }, 300);
+  };
+  vp.addEventListener("touchend", end, { passive: true });
+  vp.addEventListener("touchcancel", end, { passive: true });
+})();
 async function onUnfollowClick(e) {
   const url = e.target.closest("[data-unfollow]")?.dataset.unfollow;
   if (!url) return;
@@ -928,7 +1187,16 @@ document.addEventListener("error", (e) => {
 for (const ev of ["gesturestart", "gesturechange", "dblclick"]) document.addEventListener(ev, (e) => e.preventDefault(), { passive: false });
 
 // Le service worker transmet le lien d'une notification touchée
+// l'utilisateur a-t-il déjà commencé à utiliser l'app ? (sinon, une mise à jour peut recharger sans gêner)
+let userTouched = false;
+addEventListener("pointerdown", () => { userTouched = true; }, { once: true, capture: true });
+
 navigator.serviceWorker?.addEventListener("message", (e) => {
+  // nouvelle version de l'app trouvée au lancement : on recharge tout de suite, avant que l'utilisateur ne commence
+  if (e.data?.type === "updated") {
+    if (performance.now() < 6000 && !userTouched) location.reload();
+    return;
+  }
   if (e.data?.type !== "open") return;
   e.ports[0]?.postMessage("ok");
   route(e.data.url);
@@ -952,6 +1220,8 @@ async function start() {
   if (params.get("open")) openInMusic(params.get("open"));
 
   $("#install").hidden = !(isIOS && !standalone);
+  renderFilters();
+  renderRecovery();
   renderArtists();
   renderPlaylists();
   renderNews(); // tout de suite, depuis la dernière visite : pas d'écran de chargement

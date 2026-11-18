@@ -8,6 +8,7 @@
   --muted: rgba(255, 255, 255, 0.55);
   --faint: rgba(255, 255, 255, 0.35);
   --danger: #ff453a;
+  --accent: #0a84ff; /* bleu système d'Apple : pastilles « pas encore écouté » */
   --top: calc(env(safe-area-inset-top) + 8px);
   --tabbar: calc(64px + env(safe-area-inset-bottom));
   color-scheme: dark;
@@ -271,8 +272,9 @@ label.row { cursor: pointer; }
   display: flex; flex-direction: column; justify-content: center; align-items: center;
   background: rgba(255, 255, 255, 0.035);
   touch-action: none; -webkit-user-select: none; user-select: none;
-  transition: background 0.2s;
+  opacity: 0; pointer-events: none; transition: background 0.2s, opacity 0.3s;
 }
+.az.visible, .az.active { opacity: 1; pointer-events: auto; }
 .az span {
   flex: 1 1 0; min-height: 0; max-height: 18px; width: 18px; border-radius: 9px;
   display: grid; place-items: center; font-size: 10.5px; font-weight: 700; line-height: 1;
@@ -283,7 +285,6 @@ label.row { cursor: pointer; }
 .az span.cur { background: #fff; color: var(--navy); transform: scale(1.18); }
 .az.active { background: rgba(255, 255, 255, 0.09); }
 /* la liste laisse la place à l'index (il ne chevauche plus les croix) */
-.with-az #artists { margin-right: 18px; }
 /* grosse lettre qui suit le doigt pendant qu'on glisse sur l'index */
 .az-bubble {
   position: fixed; right: 40px; z-index: 26; width: 64px; height: 64px; margin-top: -32px; border-radius: 50%;
@@ -329,10 +330,43 @@ label.row { cursor: pointer; }
   .profile h1 { font-size: 34px; }
   /* l'index A à Z reste collé au bord de la liste, même quand elle est centrée */
   .az { right: max(3px, calc((100vw - 720px) / 2 + 4px)); }
-  .with-az #artists { margin-right: 26px; }
   .tabbar { width: 300px; }
   .ob { max-width: 600px; padding-top: 60px; }
 }
+
+/* Liens texte */
+.link { background: none; border: 0; padding: 4px 0; color: var(--accent); font-size: 15px; font-weight: 600; }
+
+/* Filtres de Nouveautés (sélecteur segmenté d'iPhone) */
+.seg { display: grid; grid-auto-flow: column; grid-auto-columns: 1fr; gap: 2px; padding: 2px; margin: 2px 0 16px; border-radius: 9px; background: var(--surface); }
+.seg button { height: 32px; border-radius: 7px; font-size: 14px; font-weight: 600; color: var(--muted); transition: background 0.2s, color 0.2s; }
+.seg button.on { background: rgba(255, 255, 255, 0.14); color: var(--text); }
+.news-tools { display: flex; justify-content: flex-end; margin: -6px 2px 6px; }
+.news-tools:has(> [hidden]) { display: none; }
+
+/* Pastille « pas encore écouté » */
+.list > li > .main { position: relative; }
+.udot { position: absolute; left: 3px; top: 50%; width: 7px; height: 7px; margin-top: -3.5px; border-radius: 50%; background: var(--accent); }
+.tab-dot { position: absolute; top: 9px; right: calc(50% - 17px); width: 8px; height: 8px; border-radius: 50%; background: var(--accent); box-shadow: 0 0 0 2px var(--navy); }
+
+/* À venir */
+.upcoming { margin-bottom: 26px; }
+.upcoming .day-head p { text-transform: none; }
+.countdown { flex: none; margin-right: 12px; padding: 3px 9px; border-radius: 999px; background: rgba(255, 255, 255, 0.1); font-size: 13px; font-weight: 600; white-space: nowrap; }
+
+/* Code de récupération */
+.value.code { font-family: ui-monospace, "SF Mono", Menlo, monospace; letter-spacing: 0.06em; color: var(--text); -webkit-user-select: all; user-select: all; }
+.value.warn { color: #ff9f0a; }
+.ob-restore-toggle { display: block; margin: 18px auto 0; }
+#ob-restore { margin-top: 12px; }
+
+/* Glisser entre les onglets : les pages se suivent */
+.tab-scroller.swipe-anim { transition: transform 0.3s cubic-bezier(0.2, 0.8, 0.2, 1); }
+.tab-scroller.peek { visibility: visible; }
+
+/* Ouverture plus douce : les images apparaissent en fondu */
+.cover, .avatar img { animation: fadein 0.25s ease; }
+@keyframes fadein { from { opacity: 0; } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

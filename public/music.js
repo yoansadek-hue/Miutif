@@ -224,8 +224,8 @@ export async function discography(artistId, country = "fr") {
     .filter((r) => { const k = r.title.toLowerCase(); return !seen.has(k) && seen.add(k); });
 }
 
-/** Sorties récentes des artistes donnés (une entrée par artiste suivi et par sortie si dedupe=false). */
-export async function recentReleases(artistIds, { country = "fr", days = 30, now = Date.now(), dedupe = true } = {}) {
+/** Toutes les sorties connues des artistes donnés (récentes et à venir), une entrée par artiste suivi. */
+async function lookupReleases(artistIds, country) {
   const found = new Map();
   for (const ids of chunks([...new Set(artistIds)], 40)) {
     // sort=recent est indispensable (sinon Apple trie par popularité) mais approximatif :
@@ -240,5 +240,25 @@ export async function recentReleases(artistIds, { country = "fr", days = 30, now
       found.set(`${rel.id}|${current}`, rel);
     }
   }
-  return filterRecent([...found.values()], { days, now, dedupe });
+  return [...found.values()];
+}
+
+/** Sorties pas encore parues (précommandes), dans les `days` prochains jours, la plus proche d'abord. */
+export function filterUpcoming(releases, { days = 180, now = Date.now() } = {}) {
+  const seen = new Set();
+  return releases
+    .filter((r) => { const t = Date.parse(r.date); return t > now && t - now <= days * 86400000; })
+    .sort((a, b) => a.date.localeCompare(b.date))
+    .filter((r) => { const k = `${r.artist}|${r.title}`.toLowerCase(); return !seen.has(k) && seen.add(k); });
+}
+
+/** Sorties récentes des artistes donnés (une entrée par artiste suivi et par sortie si dedupe=false). */
+export async function recentReleases(artistIds, { country = "fr", days = 30, now = Date.now(), dedupe = true } = {}) {
+  return filterRecent(await lookupReleases(artistIds, country), { days, now, dedupe });
+}
+
+/** Sorties récentes ET à venir, avec les mêmes requêtes : { recent, upcoming }. */
+export async function catalogReleases(artistIds, { country = "fr", days = 30, now = Date.now() } = {}) {
+  const all = await lookupReleases(artistIds, country);
+  return { recent: filterRecent(all, { days, now }), upcoming: filterUpcoming(all, { now }) };
 }

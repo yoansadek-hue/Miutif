@@ -1,6 +1,39 @@
-// Service worker de Miutif : uniquement les notifications (pas de cache, pour ne jamais bloquer une mise à jour).
+// Service worker de Miutif : notifications + ouverture instantanée et hors connexion.
+// L'app est servie tout de suite depuis la mémoire, puis mise à jour en arrière-plan.
+// Si une nouvelle version arrive au lancement, l'app est prévenue et se recharge.
+const SHELL = "miutif-shell-v1";
+
 self.addEventListener("install", () => self.skipWaiting());
 self.addEventListener("activate", (e) => e.waitUntil(self.clients.claim()));
+
+async function notifyUpdate() {
+  for (const c of await self.clients.matchAll({ type: "window" })) c.postMessage({ type: "updated" });
+}
+
+self.addEventListener("fetch", (e) => {
+  const req = e.request;
+  const url = new URL(req.url);
+  // les données (API) et ce service worker passent toujours par le réseau
+  if (req.method !== "GET" || url.origin !== self.location.origin || url.pathname.startsWith("/api/") || url.pathname === "/sw.js") return;
+  const nav = req.mode === "navigate";
+  const key = nav ? "/" : req; // toutes les ouvertures (/?tab=…) partagent la même page
+  e.respondWith((async () => {
+    const cache = await caches.open(SHELL);
+    const cached = await cache.match(key);
+    const network = fetch(req).then(async (res) => {
+      if (res.ok && res.type === "basic") {
+        if (nav && cached) {
+          const [a, b] = await Promise.all([cached.clone().text(), res.clone().text()]);
+          if (a !== b) notifyUpdate(); // nouvelle version de l'app
+        }
+        await cache.put(key, res.clone());
+      }
+      return res;
+    }).catch(() => null);
+    if (cached) { e.waitUntil(network); return cached; }
+    return (await network) || new Response("Miutif est hors connexion.", { status: 503, headers: { "Content-Type": "text/plain; charset=utf-8" } });
+  })());
+});
 
 self.addEventListener("push", (e) => {
   let d = {};

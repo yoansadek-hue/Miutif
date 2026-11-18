@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { createECDH, randomBytes } from "node:crypto";
 import worker from "../src/worker.js";
 import { b64url } from "../src/push.js";
-import { searchArtists, recentReleases, discography, featOf } from "../public/music.js";
+import { searchArtists, recentReleases, discography, featOf, filterUpcoming, catalogReleases } from "../public/music.js";
 
 const ece = createRequire(import.meta.url)("http_ece");
 let failed = 0;
@@ -34,6 +34,7 @@ function phone(name) {
 const NOW = Date.parse("2026-11-18T10:00:00Z"); // 11:00 à Paris
 const day = (d) => new Date(NOW - d * 86400000).toISOString();
 const pushes = [];
+const dispatches = [];
 let pushStatus = 201;
 let robotFile = null;
 let robotReads = 0;
@@ -73,6 +74,10 @@ globalThis.fetch = async (url, init = {}) => {
     robotReads++;
     return robotFile ? Response.json(robotFile) : new Response("404", { status: 404 });
   }
+  if (url.startsWith("https://api.github.com/")) {
+    dispatches.push({ url, auth: init.headers.Authorization, body: init.body });
+    return new Response(null, { status: 204 });
+  }
   if (url.startsWith("https://web.push.apple.com/")) {
     const ph = phones[url];
     const payload = JSON.parse(ece.decrypt(Buffer.from(init.body), { version: "aes128gcm", privateKey: ph.ecdh, authSecret: ph.auth }).toString());
@@ -107,6 +112,15 @@ check(rel[0].kind === "Single" && rel[0].title === "Neuf" && rel[0].artistId ===
 check(featOf({ artist: "Future", featured: true }, "Drake") === "Drake", "feat : Drake sur un titre de Future → « feat. Drake »");
 check(featOf({ artist: "SCH & SDM", featured: true }, "SDM") === null, "feat : SDM dans « SCH & SDM » est artiste principal, pas un feat");
 check(featOf({ artist: "Artiste A", featured: false }, "Artiste A") === null, "feat : sa propre sortie n'est pas un feat");
+const up = filterUpcoming([
+  { id: "a", artist: "X", title: "Bientôt", date: day(-5) },
+  { id: "b", artist: "X", title: "Demain", date: day(-1) },
+  { id: "c", artist: "X", title: "Passé", date: day(2) },
+  { id: "d", artist: "X", title: "Trop loin", date: day(-400) },
+], { now: NOW });
+check(JSON.stringify(up.map((r) => r.id)) === JSON.stringify(["b", "a"]), "à venir : seulement les sorties futures (≤ 6 mois), la plus proche d'abord");
+const cat = await catalogReleases(["111", "222"]);
+check(cat.recent.length === 2 && cat.upcoming.length === 1 && cat.upcoming[0].title === "Futur", "à venir : récupérées avec les mêmes requêtes que les sorties récentes");
 check(rel[0].featured === false, "sorties : sortie de l'artiste lui-même marquée comme non-feat");
 
 const disco = await discography("111");
@@ -152,6 +166,8 @@ check(JSON.stringify(art.data.countries.fr.sort()) === JSON.stringify(["111", "2
 
 // --- 10 h : relecture des playlists (un nouvel artiste est apparu dans la playlist)
 playlistArtists = [...playlistArtists, ["555", "Artiste E"]];
+check((await call("GET", "/api/status")).data.updated === null, "état du robot : inconnu tant qu'il n'a rien publié");
+robotReads = 0; // la lecture ci-dessus ne compte pas pour le test suivant
 await runCron("2026-11-18T09:00:00Z"); // 10:00 à Paris
 const ids = user(id).artists.map((a) => a.id);
 check(ids.includes("555") && !ids.includes("444"), "10 h : nouvel artiste de la playlist ajouté, artiste retiré à la main pas rajouté");
@@ -161,6 +177,7 @@ check(pushes.length === 0 && robotReads === 0, "10 h : aucune notification");
 // Le robot publie son fichier (comme le ferait GitHub Actions à 10 h 50)
 robotFile = { updated: new Date(NOW).toISOString(), byCountry: { fr: await recentReleases(["111", "222", "333"], { days: 14, dedupe: false }) } };
 
+check((await call("GET", "/api/status")).data.updated === robotFile.updated, "état du robot : date de sa dernière publication (Réglages)");
 // --- 11 h : une seule notification récap
 await runCron("2026-11-18T10:00:00Z");
 check(pushes.length === 1, "11 h : UNE seule notification pour 2 sorties");
@@ -188,6 +205,18 @@ pushStatus = 410;
 robotFile = { byCountry: { fr: [{ ...rel[0], date: day(0.1) }] } };
 await runCron("2026-11-20T10:00:00Z");
 check(!user(id).sub, "abonnement mort (notifs coupées) : supprimé");
+
+// --- lancement du robot par le réveil de Cloudflare (à :45)
+const robotCron = async () => { const jobs = []; await worker.scheduled({ cron: "45 * * * *", scheduledTime: NOW }, env, { waitUntil: (p) => jobs.push(p) }); await Promise.all(jobs); };
+await robotCron();
+check(dispatches.length === 0, "robot : rien n'est lancé tant que le jeton GitHub n'est pas configuré");
+env.GITHUB_TOKEN = "jeton-test";
+const before = pushes.length;
+await robotCron();
+check(dispatches.length === 1 && dispatches[0].url.endsWith("/actions/workflows/sorties.yml/dispatches") && dispatches[0].auth === "Bearer jeton-test" && JSON.parse(dispatches[0].body).ref === "main",
+  "robot : lancé à :45 par Cloudflare via l'API GitHub");
+check(pushes.length === before, "robot : le réveil de :45 n'envoie aucune notification");
+delete env.GITHUB_TOKEN;
 
 check((await call("GET", "/api/token")).status === 404, "jeton Apple Music : absent tant que non configuré");
 
