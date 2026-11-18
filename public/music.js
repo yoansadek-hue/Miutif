@@ -184,12 +184,13 @@ function coverFrom(html) {
  * La photo vient de l'en-tête de la page (ou, à défaut, de l'image de partage og:image).
  */
 export function parseArtistPage(html) {
-  let header = null;
+  let header = null, similarItems = [];
   const m = html.match(/<script[^>]*id="serialized-server-data"[^>]*>([\s\S]*?)<\/script>/);
   if (m) {
     try {
       const sections = JSON.parse(m[1])?.data?.[0]?.data?.sections || [];
       header = sections.find((s) => s.itemKind === "artistDetailHeader")?.items?.[0] || null;
+      similarItems = sections.find((s) => /SimilarArtists/.test(s.id || ""))?.items || [];
     } catch {}
   }
   const template = header?.circleArtwork?.dictionary?.url || header?.artwork?.dictionary?.url;
@@ -198,7 +199,15 @@ export function parseArtistPage(html) {
     ? template.replace("{w}x{h}{c}.{f}", "400x400cc.jpg")
     : og && /AMCArtistImages|\/Music\d*\//.test(og) ? og.replace(/\/[^/]+$/, "/400x400cc.jpg") : null;
   const name = header?.title || (html.match(/<meta property="og:title" content="([^"]*)"/)?.[1] || "").replace(/\s+sur\s+Apple\s+Music$/, "");
-  return { name, image, bio: (header?.bio || "").trim() };
+  // artistes similaires (section « Artistes similaires » de la page)
+  const similar = [];
+  for (const it of similarItems) {
+    const id = it?.contentDescriptor?.kind === "artist" && it.contentDescriptor.identifiers?.storeAdamID;
+    if (!id || !it.title) continue;
+    const art = it.artwork?.dictionary?.url;
+    similar.push({ id: String(id), name: it.title, image: art ? art.replace(/\{w\}x\{h\}(\{c\}|bb|cc)?\.\{f\}/, "200x200cc.jpg") : null });
+  }
+  return { name, image, bio: (header?.bio || "").trim(), similar: similar.slice(0, 12) };
 }
 
 /** Dates de sortie de titres (identifiants Apple Music), par paquets de 150 : { id: "2017-06-30T12:00:00Z" } */
@@ -213,15 +222,22 @@ export async function trackDates(ids, country = "fr") {
 
 /** Discographie complète d'un artiste (ses propres sorties, sans ses apparitions), la plus récente d'abord. */
 export async function discography(artistId, country = "fr") {
+  return (await artistCatalog(artistId, country)).own;
+}
+
+/**
+ * Catalogue d'un artiste : ses propres sorties (own) et ses apparitions chez les autres (feats, collaborations),
+ * déjà parues, les plus récentes d'abord.
+ */
+export async function artistCatalog(artistId, country = "fr") {
   const id = String(artistId);
   const json = await getJSON(`${ITUNES}/lookup?id=${id}&entity=album&sort=recent&limit=200&country=${country}`);
-  const seen = new Set();
-  return (json.results || [])
-    .filter((c) => c.wrapperType === "collection" && String(c.artistId) === id && c.collectionViewUrl && c.releaseDate)
-    .map((c) => toRelease(c, id))
-    .filter((r) => Date.parse(r.date) <= Date.now())
-    .sort((a, b) => b.date.localeCompare(a.date))
-    .filter((r) => { const k = r.title.toLowerCase(); return !seen.has(k) && seen.add(k); });
+  const all = (json.results || [])
+    .filter((c) => c.wrapperType === "collection" && c.collectionViewUrl && c.releaseDate && Date.parse(c.releaseDate) <= Date.now())
+    .map((c) => ({ ...toRelease(c, id), mine: String(c.artistId) === id }))
+    .sort((a, b) => b.date.localeCompare(a.date));
+  const uniq = (list) => { const seen = new Set(); return list.filter((r) => { const k = `${r.artist}|${r.title}`.toLowerCase(); return !seen.has(k) && seen.add(k); }); };
+  return { own: uniq(all.filter((r) => r.mine)), appearances: uniq(all.filter((r) => !r.mine)) };
 }
 
 /** Toutes les sorties connues des artistes donnés (récentes et à venir), une entrée par artiste suivi. */
@@ -260,5 +276,5 @@ export async function recentReleases(artistIds, { country = "fr", days = 30, now
 /** Sorties récentes ET à venir, avec les mêmes requêtes : { recent, upcoming }. */
 export async function catalogReleases(artistIds, { country = "fr", days = 30, now = Date.now() } = {}) {
   const all = await lookupReleases(artistIds, country);
-  return { recent: filterRecent(all, { days, now }), upcoming: filterUpcoming(all, { now }) };
+  return { recent: filterRecent(all, { days, now }), upcoming: filterUpcoming(all, { days: 14, now }) }; // à venir : 14 prochains jours
 }

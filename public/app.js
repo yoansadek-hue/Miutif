@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, playlistUrl, discography, featOf, catalogReleases } from "./music.js?v=12";
+import { searchArtists, playlistUrl, artistCatalog, featOf, catalogReleases } from "./music.js?v=13";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -22,7 +22,6 @@ let playlists = store.get("playlists", []);
 let excluded = new Set(store.get("excluded", [])); // artistes retirés à la main : les playlists ne les rajoutent pas
 let releases = store.get("releases", []);
 let upcoming = store.get("upcoming", []);               // sorties à venir (précommandes)
-let newsFilter = store.get("filter", "all");            // Tout, Albums, Singles, Feats
 let seen = new Set(store.get("seen", []));              // sorties déjà ouvertes (sans pastille)
 let config = { hour: 11, appleMusic: false, vapidKey: null, country: store.get("country", "fr") };
 
@@ -103,7 +102,7 @@ function showTab(tab) {
   BTNS.forEach((b) => b.classList.toggle("on", b.dataset.tab === tab));
   pillTo(BTNS.find((b) => b.dataset.tab === tab), !first);
   updateIndex();
-  if (tab === "settings") loadStatus();
+  updateSplit();
 }
 
 // ---------- Index A à Z de la liste des artistes (comme les Contacts) ----------
@@ -489,6 +488,7 @@ let lastResults = [];
 function updateSearchMode() {
   const searching = !!$("#q").value.trim();
   $("#artists").hidden = searching;
+  $("#suggestions").hidden = searching;
   updateIndex();
   $("#artists-empty").hidden = searching || artists.length > 0;
   if (!searching) { $("#results").hidden = true; lastResults = []; }
@@ -553,21 +553,108 @@ async function openArtist(id, fallbackName = "") {
     if (lastResults.length) renderResults();
   };
   paint();
+  $("#sheet-similar").innerHTML = "";
   $("#sheet-scroller").scrollTop = 0;
+  sheetArtist = id;
+  document.querySelectorAll("#artists .main.sel").forEach((el) => el.classList.remove("sel"));
+  document.querySelector(`#artists [data-open="${CSS.escape(id)}"]`)?.classList.add("sel");
   openSheet();
 
-  let list = [];
-  try { list = await discography(id, config.country); } catch {}
-  if ($("#sheet").hidden) return;
-  if (!list.length) { $("#sheet-disco").innerHTML = '<p class="empty">Discographie indisponible pour le moment.</p>'; return; }
-  const albums = list.filter((r) => r.kind === "Album");
-  const singles = list.filter((r) => r.kind !== "Album");
-  const section = (title, items) => items.length
-    ? `<h2 class="group-title">${title}</h2><ul class="list">${items.map(discoRow).join("")}</ul>` : "";
-  $("#sheet-disco").innerHTML =
-    section("Dernières sorties", list.slice(0, 5)) +
-    section(`Albums · ${albums.length}`, albums) +
-    section(`Singles et EP · ${singles.length}`, singles);
+  const [cat, info] = await Promise.allSettled([artistCatalog(id, config.country), api(`artist/${id}`)]);
+  if ($("#sheet").hidden || sheetArtist !== id) return;
+  const { own = [], appearances = [] } = cat.status === "fulfilled" ? cat.value : {};
+  const albums = own.filter((r) => r.kind === "Album");
+  const singles = own.filter((r) => r.kind !== "Album");
+  const section = (title, items, row = discoRow) => items.length
+    ? `<h2 class="group-title">${title}</h2><ul class="list">${items.map(row).join("")}</ul>` : "";
+  $("#sheet-disco").innerHTML = own.length || appearances.length
+    ? section("Dernières sorties", own.slice(0, 5)) +
+      section(`Albums · ${albums.length}`, albums) +
+      section(`Singles et EP · ${singles.length}`, singles) +
+      section(`Apparitions · ${appearances.length}`, appearances.slice(0, 30), appearanceRow)
+    : '<p class="empty">Discographie indisponible pour le moment.</p>';
+  similarList = info.status === "fulfilled" ? info.value.similar || [] : [];
+  renderSimilar();
+}
+
+let sheetArtist = null;
+let similarList = [];
+
+/** Une apparition : le titre, et l'artiste principal chez qui il apparaît. */
+const appearanceRow = (r) => `
+  <li>
+    <button class="main" data-url="${esc(r.url)}">
+      <img class="cover" src="${esc(r.artwork)}" alt="" loading="lazy" decoding="async">
+      <span class="lines"><b>${esc(r.title)}</b><span>chez ${esc(r.artist)}</span></span>
+      <span class="date">${shortDate(r.date)}</span>
+    </button>
+  </li>`;
+
+/** Ligne d'artiste suggéré, avec son bouton Suivre / Suivi. */
+const suggestRow = (s, hint) => {
+  const on = artists.some((a) => a.id === s.id);
+  return `
+  <li>
+    <button class="main" data-open="${esc(s.id)}" data-name="${esc(s.name)}">
+      <span class="avatar">${initial(s.name)}${s.image ? `<img src="${esc(s.image)}" alt="" loading="lazy">` : `<img src="${photo(s.id)}" alt="" loading="lazy">`}</span>
+      <span class="lines"><b>${esc(s.name)}</b>${hint ? `<span class="hint">${esc(hint)}</span>` : ""}</span>
+    </button>
+    <button class="follow${on ? " on" : ""}" data-toggle-follow="${esc(s.id)}" data-name="${esc(s.name)}">${on ? "Suivi" : "Suivre"}</button>
+  </li>`;
+};
+
+function renderSimilar() {
+  $("#sheet-similar").innerHTML = similarList.length
+    ? `<h2 class="group-title">Artistes similaires · suggestions</h2><ul class="list">${similarList.map((s) => suggestRow(s)).join("")}</ul>`
+    : "";
+}
+
+/** Suivre / ne plus suivre depuis une suggestion. */
+function toggleFollow(id, name) {
+  if (artists.some((a) => a.id === id)) unfollowArtist(id);
+  else if (addArtists([{ id, name }], { manual: true })) loadReleasesSoon();
+  haptic();
+  renderSimilar();
+  renderSuggestions();
+  if (sheetArtist === id) { // c'est l'artiste de la fiche ouverte : son bouton Suivre se met à jour aussi
+    const on = artists.some((x) => x.id === id);
+    $("#sheet-follow").textContent = on ? "Suivi ✓" : "Suivre";
+    $("#sheet-follow").classList.toggle("on", on);
+  }
+}
+
+// ---------- Suggestions pour toi (artistes similaires à ceux que tu suis) ----------
+
+let suggestions = store.get("suggest", { at: 0, list: [] });
+
+function renderSuggestions() {
+  const box = $("#suggestions");
+  const list = (suggestions.list || []).filter((s) => !artists.some((a) => a.id === s.id) && !excluded.has(s.id)).slice(0, 5);
+  box.innerHTML = list.length
+    ? `<h2 class="group-title sugg-title">Suggestions pour toi</h2><ul class="list">${list.map((s) => suggestRow(s, s.because ? `Comme ${s.because}` : "")).join("")}</ul>`
+    : "";
+}
+
+async function loadSuggestions() {
+  if (artists.length < 3 || Date.now() - (suggestions.at || 0) < 12 * 3600000) { renderSuggestions(); return; }
+  const followed = new Set(artists.map((a) => a.id));
+  const sample = [...artists].sort(() => Math.random() - 0.5).slice(0, 8);
+  const score = new Map();
+  await Promise.all(sample.map(async (a) => {
+    try {
+      const info = await api(`artist/${a.id}`);
+      (info.similar || []).forEach((s, i) => {
+        if (followed.has(s.id) || excluded.has(s.id)) return;
+        const e = score.get(s.id) || { ...s, n: 0, because: a.name };
+        e.n += 12 - i; // plus il est proche (et souvent cité), plus il remonte
+        score.set(s.id, e);
+      });
+    } catch {}
+  }));
+  if (!score.size) { renderSuggestions(); return; }
+  suggestions = { at: Date.now(), list: [...score.values()].sort((x, y) => y.n - x.n).slice(0, 12).map(({ id, name, image, because }) => ({ id, name, image, because })) };
+  store.set("suggest", suggestions);
+  renderSuggestions();
 }
 
 // ---------- Nouveautés ----------
@@ -601,14 +688,6 @@ const releaseRow = (r) => {
   </li>`;
 };
 
-/** Filtre choisi : Tout, Albums (et EP), Singles, Feats. */
-function applyFilter(list) {
-  if (newsFilter === "albums") return list.filter((r) => r.kind !== "Single" && !featFor(r));
-  if (newsFilter === "singles") return list.filter((r) => r.kind === "Single" && !featFor(r));
-  if (newsFilter === "feats") return list.filter((r) => featFor(r));
-  return list;
-}
-
 function countdown(iso) {
   const today = new Date(); today.setHours(0, 0, 0, 0);
   const d = new Date(iso); d.setHours(0, 0, 0, 0);
@@ -617,7 +696,7 @@ function countdown(iso) {
 }
 
 function renderUpcoming() {
-  const list = applyFilter(upcoming);
+  const list = upcoming;
   $("#upcoming").innerHTML = list.length ? `
     <section class="day upcoming">
       <div class="day-head"><h2>À venir</h2><p>${plural(list.length, "sortie")} annoncée${list.length > 1 ? "s" : ""}</p></div>
@@ -655,13 +734,6 @@ function markSeen(ids) {
   renderNewDot();
 }
 
-function renderFilters() {
-  document.querySelectorAll("#filters button").forEach((b) => {
-    b.classList.toggle("on", b.dataset.f === newsFilter);
-    b.setAttribute("aria-checked", String(b.dataset.f === newsFilter));
-  });
-}
-
 let lastNewsHtml = null;
 function renderNews(loading = false) {
   const box = $("#news");
@@ -673,10 +745,9 @@ function renderNews(loading = false) {
     $("#news-empty").hidden = true;
     return;
   }
-  const shown = applyFilter(releases);
+  const shown = releases;
   $("#news-empty").hidden = shown.length > 0;
   if (!artists.length) $("#news-empty").textContent = "Ajoute des artistes (onglet Artistes) ou une playlist (Réglages).";
-  else if (releases.length) $("#news-empty").textContent = "Rien dans ce filtre ces 30 derniers jours.";
   else $("#news-empty").textContent = "Aucune sortie ces 30 derniers jours pour tes artistes.";
 
   const groups = new Map();
@@ -915,6 +986,15 @@ $("#sheet-close").addEventListener("click", () => closeSheet());
 // ---------- Fiche : on la quitte en glissant le doigt vers la droite (comme sur iPhone) ----------
 
 const sheet = $("#sheet");
+const splitMQ = matchMedia("(min-width: 1000px) and (orientation: landscape)");
+const isSplit = () => document.body.classList.contains("split-on");
+/** iPad en paysage, onglet Artistes : la liste reste à gauche et la fiche s'affiche à droite. */
+function updateSplit() {
+  const on = splitMQ.matches && current === "artists";
+  document.body.classList.toggle("split-on", on);
+  $("#split-empty").hidden = !(on && sheet.hidden);
+}
+splitMQ.addEventListener?.("change", updateSplit);
 const shade = document.createElement("div");
 shade.className = "shade";
 document.body.append(shade);
@@ -925,10 +1005,14 @@ function openSheet() {
   shade.style.opacity = "";
   sheet.hidden = false;
   updateIndex();
+  updateSplit();
 }
 
 function closeSheet(from = 0) {
   if (sheet.hidden) return;
+  sheetArtist = null;
+  document.querySelectorAll("#artists .main.sel").forEach((el) => el.classList.remove("sel"));
+  if (isSplit()) { sheet.hidden = true; updateIndex(); updateSplit(); return; } // côte à côte : pas d'animation
   if (reduced()) { sheet.hidden = true; updateIndex(); return; }
   sheet.classList.add("leaving");
   sheet.style.transform = `translateX(${from}px)`;
@@ -943,12 +1027,13 @@ function closeSheet(from = 0) {
     sheet.style.transform = "";
     shade.style.transition = "";
     updateIndex();
+    updateSplit();
   }, 300);
 }
 
 let swipe = null;
 sheet.addEventListener("touchstart", (e) => {
-  if (e.touches.length !== 1 || sheet.classList.contains("leaving")) return;
+  if (e.touches.length !== 1 || sheet.classList.contains("leaving") || isSplit()) return;
   const t = e.touches[0];
   swipe = { x0: t.clientX, y0: t.clientY, dx: 0, t0: performance.now(), dir: null };
 }, { passive: true });
@@ -997,6 +1082,14 @@ $("#results").addEventListener("click", (e) => {
   const open = e.target.closest("[data-open]");
   if (open) openArtist(open.dataset.open, open.dataset.name);
 });
+for (const sel of ["#suggestions", "#sheet-similar"]) {
+  $(sel).addEventListener("click", (e) => {
+    const f = e.target.closest("[data-toggle-follow]");
+    if (f) return toggleFollow(f.dataset.toggleFollow, f.dataset.name);
+    const open = e.target.closest("[data-open]");
+    if (open) openArtist(open.dataset.open, open.dataset.name);
+  });
+}
 $("#artists").addEventListener("click", (e) => {
   const rm = e.target.closest("[data-remove]")?.dataset.remove;
   if (rm) return removeArtist(rm);
@@ -1011,129 +1104,42 @@ for (const sel of ["#news", "#upcoming", "#sheet-disco"]) {
     openInMusic(row.dataset.url);
   });
 }
-$("#filters").addEventListener("click", (e) => {
-  const b = e.target.closest("[data-f]");
-  if (!b || b.dataset.f === newsFilter) return;
-  newsFilter = b.dataset.f;
-  store.set("filter", newsFilter);
-  renderFilters();
-  renderNews();
-  haptic();
-});
 $("#mark-all").addEventListener("click", () => {
   markSeen([...releases, ...upcoming].map((r) => r.id));
   lastNewsHtml = null;
   renderNews();
 });
 
-// ---------- Code de récupération ----------
-
-const formatCode = (id) => id.toUpperCase().match(/.{1,4}/g).join("-");
-
-function renderRecovery() {
-  $("#recovery-code").textContent = formatCode(userId);
-}
-
-$("#recovery-copy").addEventListener("click", async () => {
-  const btn = $("#recovery-copy");
-  try { await navigator.clipboard.writeText(formatCode(userId)); btn.textContent = "Code copié ✓"; }
-  catch { btn.textContent = "Appuie longuement sur le code pour le copier"; }
-  setTimeout(() => { btn.textContent = "Copier le code"; }, 2200);
-});
-
-/** Remplace les données de cet appareil par celles du compte du code. */
-async function restoreFromCode(raw) {
-  const id = String(raw || "").toLowerCase().replace(/[^a-z0-9]/g, "");
-  if (!/^[a-z0-9]{16,40}$/.test(id)) throw new Error("Ce code n'est pas valide.");
-  if (id === userId) throw new Error("C'est déjà le code de cet appareil.");
-  const saved = await api(`user?id=${id}`);
-  if (!saved.artists?.length && !saved.playlists?.length) throw new Error("Aucun compte trouvé pour ce code.");
-  await sync({ subscription: null }).catch(() => {}); // l'ancien compte de cet appareil ne reçoit plus de notifications
-  userId = id;
-  store.set("id", id);
-  artists = saved.artists || [];
-  playlists = saved.playlists || [];
-  excluded = new Set((saved.excluded || []).map(String));
-  store.set("artists", artists);
-  store.set("playlists", playlists);
-  store.set("excluded", [...excluded]);
-  releases = []; upcoming = [];
-  renderArtists(); renderPlaylists(); renderRecovery();
-  const sub = await currentSubscription();
-  if (sub && Notification.permission === "granted") await sync({ subscription: sub.toJSON() }).catch(() => {});
-  loadReleases();
-}
-
-async function restoreFrom(inputSel, btnSel, errSel, after) {
-  const btn = $(btnSel), err = $(errSel), label = btn.textContent;
-  err.hidden = true;
-  btn.disabled = true;
-  btn.textContent = "Restauration…";
-  try {
-    await restoreFromCode($(inputSel).value);
-    $(inputSel).value = "";
-    btn.textContent = "Restauré ✓";
-    setTimeout(() => { btn.textContent = label; }, 2000);
-    after?.();
-  } catch (e) {
-    err.textContent = e.message;
-    err.hidden = false;
-    btn.textContent = label;
-  } finally {
-    btn.disabled = false;
-  }
-}
-$("#restore-btn").addEventListener("click", () => restoreFrom("#restore-code", "#restore-btn", "#restore-error"));
-$("#ob-restore-toggle").addEventListener("click", () => { $("#ob-restore").hidden = !$("#ob-restore").hidden; if (!$("#ob-restore").hidden) $("#ob-restore-code").focus(); });
-$("#ob-restore-btn").addEventListener("click", () => restoreFrom("#ob-restore-code", "#ob-restore-btn", "#ob-restore-error", () => {
-  store.set("onboarded", true);
-  $("#onboard").hidden = true;
-  showTab("new");
-}));
-
-// ---------- Dernière mise à jour des sorties (le robot tourne-t-il ?) ----------
-
-let statusAt = 0;
-async function loadStatus() {
-  if (Date.now() - statusAt < 60000) return;
-  statusAt = Date.now();
-  const el = $("#last-update");
-  try {
-    const { updated } = await api("status");
-    if (!updated) { el.textContent = "Inconnue"; return; }
-    const min = Math.max(0, Math.round((Date.now() - Date.parse(updated)) / 60000));
-    const ago = min < 1 ? "à l'instant" : min < 60 ? `il y a ${min} min` : `il y a ${Math.floor(min / 60)} h ${String(min % 60).padStart(2, "0")}`;
-    const late = min > 3 * 60;
-    el.textContent = late ? `⚠ ${ago}` : ago;
-    el.classList.toggle("warn", late);
-    $("#update-foot").textContent = late
-      ? "La recherche des nouveautés a du retard : le robot ne tourne peut-être plus. Les nouveautés reviendront à son prochain passage."
-      : "Les nouveautés sont recherchées à minuit, à 6 h, à 10 h 50, puis toutes les heures.";
-  } catch {
-    el.textContent = "Hors connexion";
-  }
-}
-
 // ---------- Glisser à gauche / à droite pour changer d'onglet (la bulle de la barre suit) ----------
+// Fluide même quand on va vite : une seule mise à jour par image, vitesse mesurée en fin de geste,
+// durée de l'animation adaptée à la vitesse, et un nouveau geste termine aussitôt l'animation en cours.
 (() => {
   const vp = $(".viewport");
-  let g = null;
-  const W = () => vp.clientWidth;
+  let g = null, anim = null;
   const els = () => TABS.map((t) => $(`#scroll-${t}`));
+  const finishAnim = () => { if (!anim) return; const a = anim; anim = null; clearTimeout(a.timer); a.done(); };
+  const paint = () => {
+    if (!g) return;
+    g.raf = 0;
+    els().forEach((el, i) => { if (Math.abs(i - g.idx) <= 1) el.style.transform = `translate3d(${(i - g.idx) * g.w + g.dx}px,0,0)`; });
+    const p = -g.dx / g.w, next = BTNS[g.idx + Math.sign(p)], from = BTNS[g.idx].offsetLeft;
+    place(next ? from + (next.offsetLeft - from) * Math.min(1, Math.abs(p)) : from - g.dx * 0.05);
+  };
   vp.addEventListener("touchstart", (e) => {
-    if (e.touches.length !== 1 || !sheet.hidden || azEl.classList.contains("active")) { g = null; return; }
+    finishAnim();
+    if (e.touches.length !== 1 || !sheet.hidden || azEl.classList.contains("active") || isSplit()) { g = null; return; }
     const t = e.touches[0];
-    g = { x0: t.clientX, y0: t.clientY, dx: 0, t0: performance.now(), dir: null, idx: TABS.indexOf(current) };
+    g = { x0: t.clientX, y0: t.clientY, dx: 0, dir: null, idx: TABS.indexOf(current), w: vp.clientWidth, s: [[performance.now(), t.clientX]], raf: 0 };
   }, { passive: true });
   vp.addEventListener("touchmove", (e) => {
     if (!g) return;
     const t = e.touches[0], dx = t.clientX - g.x0, dy = t.clientY - g.y0;
     if (!g.dir) {
-      if (Math.abs(dx) < 10 && Math.abs(dy) < 10) return;
-      g.dir = Math.abs(dx) > Math.abs(dy) * 1.3 ? "x" : "y";
+      if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return;
+      g.dir = Math.abs(dx) > Math.abs(dy) ? "x" : "y";
       if (g.dir === "x") {
         $("#q").blur();
-        els().forEach((el, i) => { if (Math.abs(i - g.idx) === 1) el.classList.add("peek"); });
+        els().forEach((el, i) => { if (Math.abs(i - g.idx) <= 1) el.classList.add("moving"); if (Math.abs(i - g.idx) === 1) el.classList.add("peek"); });
       }
     }
     if (g.dir !== "x") return;
@@ -1141,28 +1147,39 @@ async function loadStatus() {
     let d = dx;
     if ((g.idx === 0 && d > 0) || (g.idx === TABS.length - 1 && d < 0)) d *= 0.25; // pas d'onglet de ce côté : ça résiste
     g.dx = d;
-    els().forEach((el, i) => { el.style.transform = `translateX(${(i - g.idx) * W() + d}px)`; });
-    // la bulle de la barre suit les pages
-    const p = -d / W(), next = BTNS[g.idx + Math.sign(p)];
-    const from = BTNS[g.idx].offsetLeft;
-    place(next ? from + (next.offsetLeft - from) * Math.min(1, Math.abs(p)) : from + -d * 0.05);
+    g.s.push([performance.now(), t.clientX]);
+    if (g.s.length > 6) g.s.shift();
+    if (!g.raf) g.raf = requestAnimationFrame(paint);
   }, { passive: false });
   const end = () => {
     if (!g) return;
     const s = g;
     g = null;
+    if (s.raf) cancelAnimationFrame(s.raf);
     if (s.dir !== "x") return;
-    const speed = Math.abs(s.dx) / Math.max(1, performance.now() - s.t0);
+    const [t0, x0] = s.s[0], [t1, x1] = s.s[s.s.length - 1];
+    const v = (x1 - x0) / Math.max(1, t1 - t0); // vitesse en fin de geste (px/ms)
     let to = s.idx;
-    if ((Math.abs(s.dx) > W() * 0.3 || speed > 0.5) && Math.abs(s.dx) > 30) to = Math.max(0, Math.min(TABS.length - 1, s.idx - Math.sign(s.dx)));
+    if (Math.abs(s.dx) > s.w * 0.35 || (Math.abs(v) > 0.3 && Math.sign(v) === Math.sign(s.dx))) {
+      to = Math.max(0, Math.min(TABS.length - 1, s.idx - Math.sign(s.dx)));
+    }
+    const dist = Math.abs((s.idx - to) * s.w - s.dx);
+    const dur = Math.round(Math.max(140, Math.min(320, dist / Math.max(Math.abs(v), 1.1))));
     const list = els();
-    list.forEach((el, i) => { el.classList.add("swipe-anim"); el.style.transform = `translateX(${(i - to) * W()}px)`; });
-    if (to !== s.idx) haptic();
+    list.forEach((el, i) => {
+      if (Math.abs(i - s.idx) > 1) return;
+      el.style.transition = `transform ${dur}ms cubic-bezier(0.25, 0.8, 0.25, 1)`;
+      el.style.transform = `translate3d(${(i - to) * s.w}px,0,0)`;
+    });
     pillTo(BTNS[to], true);
-    setTimeout(() => {
-      list.forEach((el) => { el.classList.remove("swipe-anim", "peek"); el.style.transform = ""; });
-      showTab(TABS[to]);
-    }, 300);
+    if (to !== s.idx) haptic();
+    anim = {
+      timer: setTimeout(finishAnim, dur + 30),
+      done: () => {
+        list.forEach((el) => { el.style.transition = ""; el.style.transform = ""; el.classList.remove("peek", "moving"); });
+        showTab(TABS[to]);
+      },
+    };
   };
   vp.addEventListener("touchend", end, { passive: true });
   vp.addEventListener("touchcancel", end, { passive: true });
@@ -1220,8 +1237,6 @@ async function start() {
   if (params.get("open")) openInMusic(params.get("open"));
 
   $("#install").hidden = !(isIOS && !standalone);
-  renderFilters();
-  renderRecovery();
   renderArtists();
   renderPlaylists();
   renderNews(); // tout de suite, depuis la dernière visite : pas d'écran de chargement
@@ -1251,6 +1266,7 @@ async function start() {
   if (sub && Notification.permission === "granted") sync({ subscription: sub.toJSON() }).catch(() => {});
 
   loadReleases();
+  loadSuggestions();
   if (await refreshPlaylists()) loadReleasesSoon();
 }
 

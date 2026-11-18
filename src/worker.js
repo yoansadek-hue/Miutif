@@ -154,10 +154,10 @@ async function api(request, url, env) {
 
 async function artistInfo(env, id, country) {
   const cached = await env.DB.get(`a:${id}`, "json");
-  if (cached) return cached;
+  if (cached && Array.isArray(cached.similar)) return cached; // anciennes fiches sans artistes similaires : on les relit
   const res = await fetch(`https://music.apple.com/${country}/artist/x/${id}`, { headers: APPLE_HEADERS });
   if (!res.ok && res.status !== 404) throw new Error(`Apple Music ne répond pas (${res.status})`);
-  const info = { id, ...(res.ok ? parseArtistPage(await res.text()) : { name: "", image: null, bio: "" }) };
+  const info = { id, ...(res.ok ? parseArtistPage(await res.text()) : { name: "", image: null, bio: "", similar: [] }) };
   await env.DB.put(`a:${id}`, JSON.stringify(info), { expirationTtl: ARTIST_TTL });
   return info;
 }

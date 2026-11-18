@@ -5,7 +5,7 @@ import { createRequire } from "node:module";
 import { createECDH, randomBytes } from "node:crypto";
 import worker from "../src/worker.js";
 import { b64url } from "../src/push.js";
-import { searchArtists, recentReleases, discography, featOf, filterUpcoming, catalogReleases } from "../public/music.js";
+import { searchArtists, recentReleases, discography, featOf, filterUpcoming, catalogReleases, artistCatalog } from "../public/music.js";
 
 const ece = createRequire(import.meta.url)("http_ece");
 let failed = 0;
@@ -67,7 +67,10 @@ globalThis.fetch = async (url, init = {}) => {
   if (url.startsWith("https://music.apple.com/") && url.includes("/artist/")) {
     artistFetches++;
     if (url.endsWith("/999")) return new Response("introuvable", { status: 404 });
-    const data = { data: [{ data: { sections: [{ itemKind: "artistDetailHeader", items: [{ title: "Artiste A", bio: "Né à Paris.\nRappeur.", circleArtwork: { dictionary: { url: "https://is1-ssl.mzstatic.com/image/thumb/a/file.png/{w}x{h}{c}.{f}" } } }] }] } }] };
+    const data = { data: [{ data: { sections: [{ itemKind: "artistDetailHeader", items: [{ title: "Artiste A", bio: "Né à Paris.\nRappeur.", circleArtwork: { dictionary: { url: "https://is1-ssl.mzstatic.com/image/thumb/a/file.png/{w}x{h}{c}.{f}" } } }] }, { id: "artists_111.marker.SimilarArtists-CircleLockupSection", itemKind: "bubbleLockup", items: [
+      { title: "Proche 1", contentDescriptor: { kind: "artist", identifiers: { storeAdamID: "701" } }, artwork: { dictionary: { url: "https://is1-ssl.mzstatic.com/image/thumb/p1.jpg/{w}x{h}bb.{f}" } } },
+      { title: "Proche 2", contentDescriptor: { kind: "artist", identifiers: { storeAdamID: "702" } } },
+    ] }] } }] };
     return new Response(`<script type="application/json" id="serialized-server-data">${JSON.stringify(data)}</script>`);
   }
   if (url.startsWith(DATA_URL)) {
@@ -123,12 +126,17 @@ const cat = await catalogReleases(["111", "222"]);
 check(cat.recent.length === 2 && cat.upcoming.length === 1 && cat.upcoming[0].title === "Futur", "à venir : récupérées avec les mêmes requêtes que les sorties récentes");
 check(rel[0].featured === false, "sorties : sortie de l'artiste lui-même marquée comme non-feat");
 
+const catA = await artistCatalog("111");
+check(JSON.stringify(catA.own.map((r) => r.id)) === JSON.stringify(["1", "2"]) && JSON.stringify(catA.appearances.map((r) => r.id)) === JSON.stringify(["4"]),
+  "fiche artiste : ses sorties d'un côté, ses apparitions chez les autres de l'autre");
 const disco = await discography("111");
 check(JSON.stringify(disco.map((r) => r.id)) === JSON.stringify(["1", "2"]), "discographie : ses sorties parues (sans doublon, sans le futur, sans les autres artistes), la plus récente d'abord");
 
 // --- Fiches artistes
 const fiche = await call("GET", "/api/artist/111");
 check(fiche.data.name === "Artiste A" && fiche.data.bio.startsWith("Né à Paris") && fiche.data.image.endsWith("/400x400cc.jpg"), "fiche artiste : nom, biographie et photo carrée");
+check(fiche.data.similar.length === 2 && fiche.data.similar[0].id === "701" && fiche.data.similar[0].image.endsWith("/200x200cc.jpg") && fiche.data.similar[1].image === null,
+  "fiche artiste : artistes similaires (identifiant, nom, photo) pour les suggestions");
 const ph = await call("GET", "/api/artist/111/photo");
 check(ph.status === 302 && ph.headers.get("Location").includes("mzstatic") && artistFetches === 1, "photo : redirection vers l'image, fiche gardée en mémoire (1 seule lecture Apple)");
 check((await call("GET", "/api/artist/999/photo")).status === 404, "photo absente : 404 (l'app affiche l'initiale)");
