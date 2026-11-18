@@ -57,10 +57,10 @@ function openInMusic(url) {
 }
 
 /** Petite fenêtre de confirmation. Renvoie true si l'utilisateur confirme. */
-function confirmBox(title, text, ok = "Supprimer", avatarHtml = "") {
+function confirmBox(title, text, ok = "Supprimer", avatarHtml = "", square = false) {
   return new Promise((resolve) => {
     const pp = $("#confirm-avatar"); // (absent d'une ancienne page : la confirmation marche quand même)
-    if (pp) { pp.innerHTML = avatarHtml; pp.hidden = !avatarHtml; }
+    if (pp) { pp.innerHTML = avatarHtml; pp.hidden = !avatarHtml; pp.classList.toggle("square", square); }
     $("#confirm-title").textContent = title;
     $("#confirm-text").textContent = text;
     $("#confirm-yes").textContent = ok;
@@ -543,16 +543,18 @@ async function removeArtist(id) {
   if (!a) return;
   const pp = `${initial(a.name)}<img src="${photo(a.id)}" alt="">`;
   if (!(await confirmBox("Supprimer cet artiste ?", `Voulez-vous vraiment supprimer ${a.name} ? Tu ne seras plus prévenu de ses sorties.`, "Supprimer", pp))) return;
-  // la ligne devient rouge, glisse hors de la liste et se referme, puis l'artiste est retiré
-  const li = document.querySelector(`#artists [data-remove="${CSS.escape(id)}"]`)?.closest("li");
-  if (li && !reduced()) {
-    li.style.maxHeight = `${li.offsetHeight}px`;
-    li.classList.add("removing");
-    haptic();
-    requestAnimationFrame(() => requestAnimationFrame(() => li.classList.add("out")));
-    await new Promise((r) => setTimeout(r, 560));
-  }
+  await animateRemoval(document.querySelector(`#artists [data-remove="${CSS.escape(id)}"]`)?.closest("li"));
   unfollowArtist(id);
+}
+
+/** Suppression mise en évidence : la ligne devient rouge, glisse hors de la liste et se referme. */
+async function animateRemoval(row) {
+  if (!row || reduced()) return;
+  row.style.maxHeight = `${row.offsetHeight}px`;
+  row.classList.add("removing");
+  haptic();
+  requestAnimationFrame(() => requestAnimationFrame(() => row.classList.add("out")));
+  await new Promise((r) => setTimeout(r, 560));
 }
 
 /** Ne plus suivre un artiste (il n'est plus rajouté par une playlist). */
@@ -872,13 +874,16 @@ function renderPlaylists() {
   $("#ob-start").disabled = !playlists.length && !artists.length;
 }
 
-async function importPlaylist(input) {
+async function importPlaylist(input, { refresh = false } = {}) {
   const url = playlistUrl(input);
   if (!url) throw new Error("Colle un lien de playlist Apple Music");
   const res = await api("playlist", { url });
+  // relecture : si la playlist a été supprimée pendant ce temps, on n'y touche plus
+  if (refresh && !playlists.some((p) => p.url === url)) return { added: 0, url };
   const added = addArtists(res.artists);
   const entry = { url, title: res.title.replace(/\s+sur\s+Apple\s+Music$/, ""), count: res.artists.length, cover: res.image || null, truncated: !!res.truncated };
-  playlists = [entry, ...playlists.filter((p) => p.url !== url)];
+  // une relecture met la playlist à jour à sa place ; un nouvel ajout la met en tête
+  playlists = refresh ? playlists.map((p) => (p.url === url ? entry : p)) : [entry, ...playlists.filter((p) => p.url !== url)];
   renderPlaylists();
   saveAll();
   return { added, ...entry };
@@ -911,8 +916,9 @@ async function addPlaylistFromField(inputSel = "#pl-url", btnSel = "#pl-add") {
 /** À l'ouverture : les artistes ajoutés depuis dans tes playlists sont suivis automatiquement. */
 async function refreshPlaylists() {
   let added = 0;
-  for (const p of playlists) {
-    try { added += (await importPlaylist(p.url)).added; } catch {}
+  for (const p of [...playlists]) {
+    if (!playlists.some((x) => x.url === p.url)) continue; // supprimée entre-temps
+    try { added += (await importPlaylist(p.url, { refresh: true })).added; } catch {}
   }
   return added;
 }
@@ -1256,9 +1262,13 @@ $("#mark-all").addEventListener("click", () => {
   vp.addEventListener("touchcancel", end, { passive: true });
 })();
 async function onUnfollowClick(e) {
-  const url = e.target.closest("[data-unfollow]")?.dataset.unfollow;
+  const btn = e.target.closest("[data-unfollow]");
+  const url = btn?.dataset.unfollow;
   if (!url) return;
-  if (!(await confirmBox("Retirer cette playlist ?", "Ses artistes restent suivis, mais ses nouveaux artistes ne seront plus ajoutés.", "Retirer"))) return;
+  const p = playlists.find((x) => x.url === url);
+  const cover = p?.cover ? `<img src="${esc(p.cover)}" alt="">` : "♪";
+  if (!(await confirmBox("Supprimer cette playlist ?", `Voulez-vous vraiment supprimer ${p?.title || "cette playlist"} ? Ses artistes restent suivis, mais ses nouveaux artistes ne seront plus ajoutés.`, "Supprimer", cover, true))) return;
+  await animateRemoval(btn.closest(".row"));
   playlists = playlists.filter((p) => p.url !== url);
   renderPlaylists();
   saveAll();

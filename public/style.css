@@ -256,6 +256,7 @@ label.row { cursor: pointer; }
 .box { width: min(280px, 100%); border-radius: 14px; background: var(--surface); text-align: center; overflow: hidden; }
 .box h3 { font-size: 17px; font-weight: 600; padding: 20px 16px 4px; }
 .confirm-avatar { width: 64px; height: 64px; font-size: 26px; margin: 22px auto 0; }
+.confirm-avatar.square { width: 72px; height: 72px; border-radius: 12px; }
 .confirm-avatar + h3 { padding-top: 12px; }
 .box p { color: var(--muted); font-size: 14px; padding: 0 16px 18px; }
 .box-actions { display: grid; grid-template-columns: 1fr 1fr; box-shadow: inset 0 1px 0 var(--line); }
@@ -412,11 +413,13 @@ label.row { cursor: pointer; }
 @keyframes fadein { from { opacity: 0; } }
 
 /* la ligne supprimée devient rouge, glisse hors de la liste puis se referme */
-.list > li.removing {
+.list > li.removing, .group > .row.removing {
   background: rgba(255, 69, 58, 0.22); overflow: hidden;
   transition: transform 0.32s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.32s, max-height 0.26s ease 0.28s, min-height 0.26s ease 0.28s;
 }
-.list > li.removing.out { transform: translateX(-105%); opacity: 0; max-height: 0 !important; min-height: 0; }
+.list > li.removing.out, .group > .row.removing.out { transform: translateX(-105%); opacity: 0; max-height: 0 !important; min-height: 0; }
+.group > .row.removing { transition: transform 0.32s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.32s, max-height 0.26s ease 0.28s, min-height 0.26s ease 0.28s, padding 0.26s ease 0.28s; }
+.group > .row.removing.out { padding-top: 0; padding-bottom: 0; }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
