@@ -1274,6 +1274,14 @@ function route(link) {
   } catch {}
 }
 
+// ---------- Écran de chargement ----------
+function hideSplash() {
+  const s = document.getElementById("splash");
+  if (!s) return;
+  requestAnimationFrame(() => s.classList.add("out"));
+  setTimeout(() => s.remove(), 450);
+}
+
 // ---------- Démarrage ----------
 
 async function start() {
@@ -1291,6 +1299,7 @@ async function start() {
   renderPlaylists();
   renderNews(); // tout de suite, depuis la dernière visite : pas d'écran de chargement
   maybeOnboard();
+  hideSplash(); // l'app est affichée : l'écran de chargement s'efface en fondu
 
   if ("serviceWorker" in navigator) navigator.serviceWorker.register("/sw.js").catch(() => {});
 
