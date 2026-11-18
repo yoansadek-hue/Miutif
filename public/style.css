@@ -397,7 +397,32 @@ label.row { cursor: pointer; }
 .tile b { font-size: 14px; font-weight: 600; line-height: 1.25; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
 .tile small { color: var(--muted); font-size: 12.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .tile:active img { opacity: 0.7; }
-.count-sub { color: var(--muted); font-size: 14px; }
+/* flèche « voir tout » à droite du titre d'une section */
+.see-all { width: 30px; height: 30px; margin: -4px -6px -4px 0; display: grid; place-items: center; color: var(--muted); border-radius: 50%; }
+.see-all svg { width: 20px; height: 20px; stroke-width: 2.4; }
+.see-all:active { background: var(--surface-press); }
+/* suggestions : petite flèche pour les montrer ou les cacher (comme Instagram) */
+.sugg-toggle { width: 30px; height: 30px; margin: -4px -6px -4px 0; display: grid; place-items: center; color: var(--muted); border-radius: 50%; }
+.sugg-toggle svg { width: 20px; height: 20px; stroke-width: 2.4; transition: transform 0.25s ease; }
+.sugg-toggle[aria-expanded="false"] svg { transform: rotate(-90deg); }
+.sugg-wrap { overflow: hidden; transition: max-height 0.3s ease, opacity 0.25s ease; max-height: 300px; }
+.sugg-wrap.closed { max-height: 0; opacity: 0; }
+/* toutes les sorties d'une section, en grille de 2 */
+.gridview { z-index: 41; }
+.grid-head { padding: 56px 4px 16px; }
+.grid-head h1 { font-size: 28px; }
+.grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 20px 14px; }
+.grid2 .tile { flex: none; }
+.grid2 .tile img { width: 100%; height: auto; aspect-ratio: 1; }
+/* photo de l'artiste en grand */
+.lightbox {
+  position: fixed; inset: 0; z-index: 60; display: grid; place-items: center; padding: 32px;
+  background: rgba(0, 0, 0, 0.82); -webkit-backdrop-filter: blur(18px); backdrop-filter: blur(18px); animation: fade 0.2s ease;
+}
+.lightbox img { width: min(78vw, 440px); aspect-ratio: 1; border-radius: 50%; object-fit: cover; background: var(--surface); animation: zoomin 0.3s cubic-bezier(0.2, 1.2, 0.4, 1); }
+@keyframes zoomin { from { transform: scale(0.4); opacity: 0; } }
+.lightbox.closing { animation: fade 0.18s ease reverse forwards; }
+#sheet-avatar { cursor: zoom-in; }
 .card.gone { opacity: 0; transform: scale(0.9); transition: opacity 0.2s, transform 0.2s; }
 .main.sel { background: var(--surface-press); }
 
@@ -428,6 +453,9 @@ label.row { cursor: pointer; }
 .list > li.removing.out, .group > .row.removing.out { transform: translateX(-105%); opacity: 0; max-height: 0 !important; min-height: 0; }
 .group > .row.removing { transition: transform 0.32s cubic-bezier(0.4, 0, 0.6, 1), opacity 0.32s, max-height 0.26s ease 0.28s, min-height 0.26s ease 0.28s, padding 0.26s ease 0.28s; }
 .group > .row.removing.out { padding-top: 0; padding-bottom: 0; }
+
+@media (min-width: 760px) { .grid2 { grid-template-columns: repeat(4, 1fr); } }
+@media (min-width: 1000px) and (orientation: landscape) { body.split-on .gridview { left: 40%; box-shadow: -1px 0 0 var(--line); } body.split-on .grid2 { grid-template-columns: repeat(3, 1fr); } }
 
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }

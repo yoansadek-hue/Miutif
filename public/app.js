@@ -625,6 +625,7 @@ async function openArtist(id, fallbackName = "") {
   const name = artists.find((a) => a.id === id)?.name || fallbackName;
   $("#sheet-name").textContent = name;
   $("#sheet-avatar").innerHTML = `${initial(name)}<img src="${photo(id)}" alt="">`;
+  sheetPhoto = null;
   $("#sheet-disco").innerHTML = '<p class="empty">Chargement de la discographie…</p>';
   $("#sheet-open").onclick = () => openInMusic(`https://music.apple.com/${config.country}/artist/${id}`);
   const followBtn = $("#sheet-follow");
@@ -660,20 +661,31 @@ async function openArtist(id, fallbackName = "") {
       <small>${esc(sub(r))}</small>
     </button>`;
   const year = (r) => new Date(r.date).getFullYear();
-  const section = (title, items, sub) => items.length
-    ? `<div class="sugg-head"><h2>${title}</h2><span class="count-sub">${items.length}</span></div>
-       <div class="carousel tiles">${items.map((r) => tile(r, sub)).join("")}</div>` : "";
+  sheetSections = {
+    latest: { title: "Dernières sorties", items: own.slice(0, 30), sub: (r) => `${r.kind} · ${shortDate(r.date)}` },
+    albums: { title: "Albums", items: albums, sub: (r) => `${year(r)}` },
+    singles: { title: "Singles et EP", items: singles, sub: (r) => `${r.kind} · ${year(r)}` },
+    appearances: { title: "Apparitions", items: appearances, sub: (r) => `chez ${r.artist}` },
+  };
+  const section = (key) => {
+    const s = sheetSections[key];
+    const shown = key === "latest" ? s.items.slice(0, 10) : s.items;
+    return shown.length
+      ? `<div class="sugg-head"><h2>${s.title}</h2>
+           <button class="see-all" data-section="${key}" aria-label="Voir tout : ${s.title}"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m9 6 6 6-6 6"/></svg></button></div>
+         <div class="carousel tiles">${shown.map((r) => tile(r, s.sub)).join("")}</div>` : "";
+  };
   $("#sheet-disco").innerHTML = own.length || appearances.length
-    ? section("Dernières sorties", own.slice(0, 10), (r) => `${r.kind} · ${shortDate(r.date)}`) +
-      section("Albums", albums, (r) => `${year(r)}`) +
-      section("Singles et EP", singles, (r) => `${r.kind} · ${year(r)}`) +
-      section("Apparitions", appearances, (r) => `chez ${r.artist}`)
+    ? section("latest") + section("albums") + section("singles") + section("appearances")
     : '<p class="empty">Discographie indisponible pour le moment.</p>';
+  if (info.status === "fulfilled" && info.value.image) sheetPhoto = info.value.image;
   similarList = info.status === "fulfilled" ? info.value.similar || [] : [];
   renderSimilar();
 }
 
 let sheetArtist = null;
+let sheetSections = {};
+let sheetPhoto = null; // grande photo de l'artiste (pour l'afficher en grand)
 let similarList = [];
 
 /** Une apparition : le titre, et l'artiste principal chez qui il apparaît. */
@@ -697,7 +709,6 @@ const suggestCard = (s, because) => {
     <button class="open" data-open="${esc(s.id)}" data-name="${esc(s.name)}">
       <span class="avatar">${initial(s.name)}<img src="${esc(s.image || photo(s.id))}" alt="" loading="lazy"></span>
       <b>${esc(s.name)}</b>
-      <small>Similaire à ${esc(because)}</small>
     </button>
     <button class="follow-btn${on ? " on" : ""}" data-toggle-follow="${esc(s.id)}" data-name="${esc(s.name)}">${on ? "Suivi" : "Suivre"}</button>
   </div>`;
@@ -705,10 +716,23 @@ const suggestCard = (s, because) => {
 
 function renderSimilar() {
   const list = similarList.filter((s) => !dismissed.has(s.id) && !artists.some((x) => x.id === s.id) && !excluded.has(s.id));
+  const open = store.get("suggOpen", true);
   $("#sheet-similar").innerHTML = list.length
-    ? `<div class="sugg-head"><h2>Suggestions pour vous</h2></div>
-       <div class="carousel">${list.map((s) => suggestCard(s, $("#sheet-name").textContent)).join("")}</div>`
+    ? `<div class="sugg-head"><h2>Suggestions pour vous</h2>
+         <button class="sugg-toggle" aria-expanded="${open}" aria-label="Montrer ou cacher les suggestions"><svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 9 6 6 6-6"/></svg></button></div>
+       <div class="sugg-wrap${open ? "" : " closed"}"><div class="carousel">${list.map((s) => suggestCard(s)).join("")}</div></div>`
     : "";
+}
+
+/** Montre ou cache les suggestions (le choix est retenu). */
+function toggleSuggestions() {
+  const btn = $("#sheet-similar .sugg-toggle"), wrap = $("#sheet-similar .sugg-wrap");
+  if (!btn || !wrap) return;
+  const open = btn.getAttribute("aria-expanded") !== "true";
+  btn.setAttribute("aria-expanded", String(open));
+  wrap.classList.toggle("closed", !open);
+  store.set("suggOpen", open);
+  haptic();
 }
 
 /** Écarte une suggestion (elle ne revient plus). */
@@ -1095,6 +1119,7 @@ function openSheet() {
 }
 
 function closeSheet(from = 0) {
+  if (!gridview.hidden) { gridview.hidden = true; gridview.classList.remove("leaving"); gridview.style.transform = ""; }
   if (sheet.hidden) return;
   sheetArtist = null;
   document.querySelectorAll("#artists .main.sel").forEach((el) => el.classList.remove("sel"));
@@ -1169,6 +1194,7 @@ $("#results").addEventListener("click", (e) => {
   if (open) openArtist(open.dataset.open, open.dataset.name);
 });
 $("#sheet-similar").addEventListener("click", (e) => {
+  if (e.target.closest(".sugg-toggle")) return toggleSuggestions();
   const f = e.target.closest("[data-toggle-follow]");
   if (f) return toggleFollow(f.dataset.toggleFollow, f.dataset.name);
   const x = e.target.closest("[data-dismiss]");
@@ -1176,6 +1202,86 @@ $("#sheet-similar").addEventListener("click", (e) => {
   const open = e.target.closest("[data-open]");
   if (open) openArtist(open.dataset.open, open.dataset.name);
 });
+// ---------- « Voir tout » : toutes les sorties d'une section, en grille de 2 ----------
+const gridview = $("#gridview");
+function openGrid(key) {
+  const s = sheetSections[key];
+  if (!s) return;
+  $("#grid-title").textContent = s.title;
+  $("#grid-sub").textContent = `${$("#sheet-name").textContent} · ${plural(s.items.length, "sortie")}`;
+  $("#grid-items").innerHTML = s.items.map((r) => `
+    <button class="tile" data-url="${esc(r.url)}">
+      <img src="${esc(r.artwork)}" alt="" loading="lazy" decoding="async">
+      <b>${esc(r.title)}</b>
+      <small>${esc(s.sub(r))}</small>
+    </button>`).join("");
+  $("#grid-scroller").scrollTop = 0;
+  gridview.classList.remove("leaving");
+  gridview.style.transform = "";
+  gridview.hidden = false;
+}
+function closeGrid(from = 0) {
+  if (gridview.hidden) return;
+  if (reduced()) { gridview.hidden = true; return; }
+  gridview.classList.add("leaving");
+  gridview.style.transform = `translateX(${from}px)`;
+  requestAnimationFrame(() => { gridview.style.transform = "translateX(100%)"; });
+  setTimeout(() => { gridview.hidden = true; gridview.classList.remove("leaving"); gridview.style.transform = ""; }, 300);
+}
+$("#sheet-disco").addEventListener("click", (e) => {
+  const b = e.target.closest("[data-section]");
+  if (b) { e.stopPropagation(); openGrid(b.dataset.section); }
+}, true);
+$("#grid-back").addEventListener("click", () => closeGrid());
+$("#grid-items").addEventListener("click", (e) => {
+  const url = e.target.closest("[data-url]")?.dataset.url;
+  if (url) openInMusic(url);
+});
+// glisser vers la droite pour revenir (comme la page d'artiste)
+(() => {
+  let g = null;
+  gridview.addEventListener("touchstart", (e) => {
+    if (e.touches.length !== 1 || gridview.classList.contains("leaving")) return;
+    g = { x0: e.touches[0].clientX, y0: e.touches[0].clientY, dx: 0, t0: performance.now(), dir: null };
+  }, { passive: true });
+  gridview.addEventListener("touchmove", (e) => {
+    if (!g) return;
+    const dx = e.touches[0].clientX - g.x0, dy = e.touches[0].clientY - g.y0;
+    if (!g.dir) { if (Math.abs(dx) < 8 && Math.abs(dy) < 8) return; g.dir = Math.abs(dx) > Math.abs(dy) && dx > 0 ? "x" : "y"; }
+    if (g.dir !== "x") return;
+    e.preventDefault();
+    g.dx = Math.max(0, dx);
+    gridview.style.transform = `translateX(${g.dx}px)`;
+  }, { passive: false });
+  const end = () => {
+    if (!g) return;
+    const s = g; g = null;
+    if (s.dir !== "x") return;
+    if (s.dx > innerWidth * 0.33 || s.dx / Math.max(1, performance.now() - s.t0) > 0.6) { closeGrid(s.dx); haptic(); return; }
+    gridview.classList.add("leaving");
+    gridview.style.transform = "translateX(0)";
+    setTimeout(() => gridview.classList.remove("leaving"), 300);
+  };
+  gridview.addEventListener("touchend", end);
+  gridview.addEventListener("touchcancel", end);
+})();
+
+// ---------- Photo de l'artiste en grand ----------
+$("#sheet-avatar").addEventListener("click", () => {
+  const img = $("#sheet-avatar img");
+  if (!img) return; // pas de photo : seulement l'initiale
+  $("#lightbox-img").src = (sheetPhoto || img.src).replace(/\/\d+x\d+cc\.jpg$/, "/1200x1200cc.jpg");
+  const lb = $("#lightbox");
+  lb.classList.remove("closing");
+  lb.hidden = false;
+  haptic();
+});
+$("#lightbox").addEventListener("click", () => {
+  const lb = $("#lightbox");
+  lb.classList.add("closing");
+  setTimeout(() => { lb.hidden = true; lb.classList.remove("closing"); }, 180);
+});
+
 $("#artists").addEventListener("click", (e) => {
   const rm = e.target.closest("[data-remove]")?.dataset.remove;
   if (rm) return removeArtist(rm);
