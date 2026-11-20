@@ -248,6 +248,12 @@ input[type="search"]::-webkit-search-cancel-button { -webkit-appearance: none; }
 .switch:checked::after { transform: translateX(20px); }
 .switch:disabled { opacity: 0.5; cursor: default; }
 label.row { cursor: pointer; }
+/* choix de l'heure du récap : la liste native de l'iPhone, présentée comme une valeur */
+.hour-select {
+  -webkit-appearance: none; appearance: none; border: 0; background: none; color: var(--muted);
+  font: inherit; font-size: 17px; text-align: right; text-align-last: right; padding: 4px 0; cursor: pointer;
+}
+.hour-select:focus { outline: none; color: var(--text); }
 .row.done { color: var(--muted); font-weight: 400; }
 
 /* Confirmation */

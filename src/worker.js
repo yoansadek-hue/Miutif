@@ -12,7 +12,6 @@ import { generateVapidKeys, sendPush, b64url } from "./push.js";
 import { filterRecent, playlistUrl, parsePlaylistPage, parseArtistPage, featOf } from "../public/music.js";
 
 const NOTIFY_HOUR = 11;            // heure locale des notifications
-const PLAYLIST_HOUR = 10;          // relecture des playlists avant le passage du robot
 const NEW_DAYS = 7;                // une sortie est « nouvelle » pendant 7 jours
 const ARTIST_TTL = 14 * 86400;     // fiche artiste gardée 14 jours
 const MAX_PLAYLISTS = 30;
@@ -129,6 +128,8 @@ async function api(request, url, env) {
         playlists: user?.playlists || [],
         excluded: user?.excluded || [],
         subscribed: !!user?.sub,
+        notifyHour: hourOf(user),
+        quiet: !!user?.quiet,
       });
     }
 
@@ -151,6 +152,8 @@ async function api(request, url, env) {
       if (body.subscription === null) delete user.sub;
       else if (validSub(body.subscription)) user.sub = pickSub(body.subscription);
       if (typeof body.tz === "string" && body.tz.length < 64) user.tz = body.tz;
+      if (Number.isInteger(body.notifyHour) && body.notifyHour >= 0 && body.notifyHour <= 23) user.notifyHour = body.notifyHour;
+      if (typeof body.quiet === "boolean") user.quiet = body.quiet;
       user.country = country;
       await env.DB.put(`u:${id}`, JSON.stringify(user));
       // l'appareil reçoit la version fusionnée et s'aligne dessus
@@ -173,6 +176,9 @@ async function artistInfo(env, id, country) {
 }
 
 // ---------- Réveil horaire ----------
+
+/** Heure du récap choisie par l'utilisateur (11 h par défaut). */
+const hourOf = (user) => (Number.isInteger(user?.notifyHour) ? user.notifyHour : NOTIFY_HOUR);
 
 async function forEachUser(env, fn) {
   let cursor;
@@ -205,12 +211,15 @@ async function hourlyRun(env, now) {
   await forEachUser(env, async (key, user) => {
     try {
       const { hour, day } = localTime(now, user.tz || "Europe/Paris");
-      if (hour === PLAYLIST_HOUR && user.playlists?.length && user.playlistDay !== day) {
+      const nh = hourOf(user);
+      // les playlists sont relues l'heure d'avant le récap (le robot passe ensuite à :45)
+      if (hour === (nh + 23) % 24 && user.playlists?.length && user.playlistDay !== day) {
         await refreshPlaylists(env, key, user, day);
       }
       // 11 h : le récap de la nuit et de la matinée ; ensuite, chaque heure jusqu'à minuit,
       // une notification pour les sorties apparues depuis (rien si aucune sortie nouvelle)
-      if (hour >= NOTIFY_HOUR && user.sub && user.artists?.length) {
+      // mode silencieux : seulement le récap, à l'heure choisie ; sinon aussi chaque heure jusqu'à minuit
+      if ((user.quiet ? hour === nh : hour >= nh) && user.sub && user.artists?.length) {
         data ||= await releaseData(env); // lu une seule fois par réveil, et seulement s'il y a quelqu'un à notifier
         await notifyUser(env, key, user, data, keys, now, day);
       }

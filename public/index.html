@@ -52,7 +52,7 @@
     transform-origin: 1.25px 11px; transform: rotate(calc(var(--i) * 45deg)); animation: splashspoke 0.8s linear infinite; animation-delay: calc(var(--i) * 0.1s - 0.8s); }
   @keyframes splashspoke { 0% { opacity: 1; } 100% { opacity: 0.22; } }
 </style>
-<link rel="stylesheet" href="/style.css?v=27">
+<link rel="stylesheet" href="/style.css?v=28">
 </head>
 <body>
 <div id="splash" aria-hidden="true">
@@ -112,7 +112,11 @@
           <span>Notifications</span>
           <input type="checkbox" class="switch" id="notif-switch" role="switch" aria-label="Notifications">
         </label>
-        <div class="row"><span>Tous les jours à</span><span class="value" id="notif-time">11:00</span></div>
+        <label class="row"><span>Récap tous les jours à</span><select class="value hour-select" id="notif-hour" aria-label="Heure du récap"><option value="0">00:00</option><option value="1">01:00</option><option value="2">02:00</option><option value="3">03:00</option><option value="4">04:00</option><option value="5">05:00</option><option value="6">06:00</option><option value="7">07:00</option><option value="8">08:00</option><option value="9">09:00</option><option value="10">10:00</option><option value="11">11:00</option><option value="12">12:00</option><option value="13">13:00</option><option value="14">14:00</option><option value="15">15:00</option><option value="16">16:00</option><option value="17">17:00</option><option value="18">18:00</option><option value="19">19:00</option><option value="20">20:00</option><option value="21">21:00</option><option value="22">22:00</option><option value="23">23:00</option></select></label>
+        <label class="row">
+          <span>Mode silencieux</span>
+          <input type="checkbox" class="switch" id="quiet-switch" role="switch" aria-label="Mode silencieux">
+        </label>
       </div>
       <p class="group-foot" id="notif-foot">Une seule notification par jour avec toutes les nouvelles sorties de tes artistes.</p>
 
@@ -240,6 +244,6 @@
   </div>
 </div>
 
-<script src="/app.js?v=37" type="module"></script>
+<script src="/app.js?v=38" type="module"></script>
 </body>
 </html>

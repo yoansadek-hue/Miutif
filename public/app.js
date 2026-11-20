@@ -23,6 +23,8 @@ let excluded = new Set(store.get("excluded", [])); // artistes retirés à la ma
 let releases = store.get("releases", []);
 let upcoming = store.get("upcoming", []);               // sorties à venir (précommandes)
 let seen = new Set(store.get("seen", []));              // sorties déjà ouvertes (sans pastille)
+let notifyHour = store.get("notifyHour", 11); // heure du récap
+let quiet = store.get("quiet", false);          // mode silencieux : seulement le récap
 let config = { hour: 11, appleMusic: false, vapidKey: null, country: store.get("country", "fr") };
 
 // ---------- Utilitaires ----------
@@ -83,7 +85,7 @@ function fieldError(inputSel, msg) {
 let unexcluded = new Set(store.get("unexcluded", [])); // artistes supprimés puis suivis à nouveau (à signaler au serveur)
 const sync = (extra = {}) => {
   const sent = [...unexcluded];
-  return api("sync", { id: userId, artists, playlists, excluded: [...excluded], unexcluded: sent, tz, ...extra }).then((res) => {
+  return api("sync", { id: userId, artists, playlists, excluded: [...excluded], unexcluded: sent, tz, notifyHour, quiet, ...extra }).then((res) => {
     for (const id of sent) unexcluded.delete(id);
     store.set("unexcluded", [...unexcluded]);
     applyServer(res);
@@ -966,8 +968,13 @@ async function currentSubscription() {
   return reg ? reg.pushManager.getSubscription() : null;
 }
 
+function renderNotifPrefs() {
+  $("#notif-hour").value = String(notifyHour);
+  $("#quiet-switch").checked = quiet;
+}
+
 async function renderNotifState() {
-  $("#notif-time").textContent = `${String(config.hour).padStart(2, "0")}:00`;
+  renderNotifPrefs();
   const sub = await currentSubscription();
   const on = !!sub && Notification.permission === "granted";
   const denied = pushSupported && Notification.permission === "denied";
@@ -979,7 +986,9 @@ async function renderNotifState() {
     ? "Notifications bloquées : réactive-les dans Réglages › Notifications › Miutif sur ton iPhone."
     : !pushSupported && isIOS && !standalone
       ? "Pour les notifications, ajoute Miutif à l'écran d'accueil (Safari › Partager › Sur l'écran d'accueil)."
-      : "Une seule notification par jour avec toutes les nouvelles sorties de tes artistes.";
+      : quiet
+        ? `Mode silencieux : une seule notification par jour, à ${notifyHour} h, avec toutes les nouvelles sorties.`
+        : `À ${notifyHour} h, un récap de toutes les nouvelles sorties ; ensuite, une notification à chaque nouvelle sortie jusqu'à minuit.`;
   return sub;
 }
 
@@ -1079,6 +1088,19 @@ async function importAppleMusic() {
 // ---------- Événements ----------
 
 BTNS.forEach((b) => b.addEventListener("click", (e) => { if (e.detail === 0) tapTab(b.dataset.tab); }));
+$("#notif-hour").addEventListener("change", (e) => {
+  notifyHour = Number(e.target.value);
+  store.set("notifyHour", notifyHour);
+  sync().catch(() => {});
+  renderNotifState();
+});
+$("#quiet-switch").addEventListener("change", (e) => {
+  quiet = e.target.checked;
+  store.set("quiet", quiet);
+  sync().catch(() => {});
+  renderNotifState();
+  haptic();
+});
 $("#notif-switch").addEventListener("change", (e) => (e.target.checked ? enableNotifications() : disableNotifications()));
 $("#am-import").addEventListener("click", importAppleMusic);
 $("#pl-add").addEventListener("click", () => addPlaylistFromField());
@@ -1472,6 +1494,10 @@ async function start() {
   // Ce que le serveur a (playlists relues chaque matin, téléphone réinstallé…)
   try {
     const saved = await api(`user?id=${userId}`);
+    // réglages de notification enregistrés sur le serveur (autre appareil, réinstallation)
+    if (Number.isInteger(saved.notifyHour) && saved.notifyHour !== notifyHour) { notifyHour = saved.notifyHour; store.set("notifyHour", notifyHour); }
+    if (typeof saved.quiet === "boolean" && saved.quiet !== quiet) { quiet = saved.quiet; store.set("quiet", quiet); }
+    renderNotifPrefs();
     for (const id of saved.excluded || []) excluded.add(String(id));
     // un artiste supprimé ailleurs (autre appareil, compte transféré) est retiré ici aussi
     const kept = artists.filter((x) => !excluded.has(x.id));

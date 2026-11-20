@@ -259,6 +259,24 @@ robotFile.byCountry.fr.push({ ...rel[0], id: "s3", title: "Nuit", date: "2026-11
 await runCron("2026-11-22T03:00:00Z"); // 4 h du matin : on attend le récap de 11 h
 check(soirPushes().length === 2, "la nuit : pas de notification, la sortie attend le récap de 11 h");
 
+// --- heure du récap choisie et mode silencieux
+const tot = "tot0123456789abcdefgh", calm2 = "calm20123456789abcdef";
+await call("POST", "/api/sync", { id: tot, tz: "Europe/Paris", notifyHour: 8, artists: [{ id: "111", name: "A" }], subscription: phone("tot") });
+await call("POST", "/api/sync", { id: calm2, tz: "Europe/Paris", quiet: true, artists: [{ id: "111", name: "A" }], subscription: phone("calm2") });
+check((await call("GET", `/api/user?id=${tot}`)).data.notifyHour === 8 && (await call("GET", `/api/user?id=${calm2}`)).data.quiet === true, "réglages : heure du récap et mode silencieux enregistrés");
+robotFile = { byCountry: { fr: [{ ...rel[0], id: "q1", title: "Aube", date: "2026-11-23T00:00:00Z" }] } };
+await runCron("2026-11-23T06:00:00Z"); // 7 h
+check(of("tot").length === 0, "récap à 8 h : rien à 7 h");
+await runCron("2026-11-23T07:00:00Z"); // 8 h
+check(of("tot").length === 1 && of("calm2").length === 0, "récap à 8 h : notifié à 8 h (le silencieux attend 11 h)");
+await runCron("2026-11-23T10:00:00Z"); // 11 h
+check(of("calm2").length === 1, "mode silencieux : le récap de 11 h arrive");
+robotFile.byCountry.fr.push({ ...rel[0], id: "q2", title: "Après-midi", date: "2026-11-23T00:00:00Z" });
+await runCron("2026-11-23T14:00:00Z"); // 15 h
+check(of("tot").length === 2 && of("calm2").length === 1, "15 h : nouvelle sortie notifiée, sauf en mode silencieux");
+await runCron("2026-11-24T10:00:00Z"); // lendemain 11 h
+check(of("calm2").length === 2 && of("calm2")[1].payload.body.includes("Après-midi"), "mode silencieux : la sortie de l'après-midi arrive dans le récap du lendemain");
+
 check((await call("GET", "/api/token")).status === 404, "jeton Apple Music : absent tant que non configuré");
 
 Date.now = realNow;
