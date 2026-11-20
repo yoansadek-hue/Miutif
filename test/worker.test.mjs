@@ -188,7 +188,8 @@ await runCron("2026-11-18T09:00:00Z"); // 10:00 à Paris
 const ids = user(id).artists.map((a) => a.id);
 check(ids.includes("555") && !ids.includes("444"), "10 h : nouvel artiste de la playlist ajouté, artiste retiré à la main pas rajouté");
 check(user(id).playlists[0].cover?.endsWith("/300x300bb.jpg") && user(id).playlists[0].title === "Ma playlist & moi", "10 h : couverture et titre de la playlist mis à jour");
-check(pushes.length === 0 && robotReads === 0, "10 h : aucune notification");
+const of = (name) => pushes.filter((x) => x.url.endsWith(`/${name}`)); // notifications reçues par un téléphone
+check(of("paris").length === 0, "10 h à Paris : aucune notification (on attend 11 h)");
 
 // Le robot publie son fichier (comme le ferait GitHub Actions à 10 h 50)
 robotFile = { updated: new Date(NOW).toISOString(), byCountry: { fr: await recentReleases(["111", "222", "333"], { days: 14, dedupe: false }) } };
@@ -200,26 +201,26 @@ await call("POST", "/api/sync", { id: calme, tz: "Europe/Paris", artists: [{ id:
 // --- 11 h : une seule notification récap
 await runCron("2026-11-18T10:00:00Z");
 check(!pushes.some((p) => p.url.endsWith("/calme")) && user(calme).lastRun === "2026-11-18", "11 h : aucune sortie chez ses artistes → aucune notification");
-check(pushes.length === 1, "11 h : UNE seule notification pour 2 sorties");
-const recap = pushes[0]?.payload;
+check(of("paris").length === 1, "11 h : UNE seule notification pour 2 sorties");
+const recap = of("paris")[0]?.payload;
 check(recap?.title === "2 nouvelles sorties" && recap.body.includes("Artiste A — Neuf") && recap.body.includes("Artiste B — Album B"), "11 h : le récap liste les sorties");
 check(recap?.url === "/?tab=new", "11 h : toucher le récap ouvre l'onglet Nouveautés");
 
 await runCron("2026-11-18T10:00:00Z");
 await runCron("2026-11-19T10:00:00Z");
-check(pushes.length === 1, "pas de doublon : ni le même jour, ni le lendemain");
+check(of("paris").length === 1, "pas de doublon : ni le même jour, ni le lendemain");
 
 await runCron("2026-11-19T02:00:00Z"); // 11:00 à Tokyo (suit 111 mais pas 222)
-const tk = pushes.at(-1);
-check(pushes.length === 2 && tk.url.endsWith("/tokyo") && tk.payload.title === "Nouveau single de Artiste A" && tk.payload.url === "https://music.apple.com/fr/album/neuf/1",
-  "1 seule sortie : la notif ouvre directement Apple Music (fuseau de Tokyo respecté)");
+const tk = of("tokyo")[0];
+check(of("tokyo").length === 1 && tk.payload.title === "Nouveau single de Artiste A" && tk.payload.url === "https://music.apple.com/fr/album/neuf/1",
+  "1 seule sortie : la notif ouvre directement Apple Music, une seule fois (fuseau de Tokyo respecté)");
 
 check((await call("POST", "/api/test", { id })).status === 404, "version finale : plus de notification de test");
 
 robotFile = null;
 kv.set(`u:${id}`, JSON.stringify({ ...user(id), notified: {}, lastRun: null }));
 await runCron("2026-11-20T10:00:00Z");
-check(pushes.length === 2 && user(id).lastRun === null, "fichier du robot absent : rien d'envoyé, on réessaiera");
+check(of("paris").length === 1 && user(id).lastRun === null, "fichier du robot absent : rien d'envoyé, on réessaiera");
 
 pushStatus = 410;
 robotFile = { byCountry: { fr: [{ ...rel[0], date: day(0.1) }] } };
@@ -237,6 +238,26 @@ check(dispatches.length === 1 && dispatches[0].url.endsWith("/actions/workflows/
   "robot : lancé à :45 par Cloudflare via l'API GitHub");
 check(pushes.length === before, "robot : le réveil de :45 n'envoie aucune notification");
 delete env.GITHUB_TOKEN;
+
+// --- une sortie qui apparaît après le récap de 11 h est notifiée à l'heure suivante
+pushStatus = 201; // le service de notification simulé refonctionne
+const soir = "soir0123456789abcdefg";
+await call("POST", "/api/sync", { id: soir, tz: "Europe/Paris", artists: [{ id: "111", name: "Artiste A" }], subscription: phone("soir") });
+robotFile = { byCountry: { fr: [{ ...rel[0], id: "s1", title: "Matin", date: "2026-11-21T08:00:00Z" }] } };
+await runCron("2026-11-21T10:00:00Z"); // 11 h
+const soirPushes = () => pushes.filter((p) => p.url.endsWith("/soir"));
+check(soirPushes().length === 1 && soirPushes()[0].payload.body.includes("Matin"), "11 h : récap avec la sortie du matin");
+await runCron("2026-11-21T13:00:00Z"); // 14 h, rien de nouveau
+check(soirPushes().length === 1, "14 h : rien de nouveau → aucune notification");
+robotFile.byCountry.fr.push({ ...rel[0], id: "s2", title: "Surprise", date: "2026-11-21T08:00:00Z" });
+await runCron("2026-11-21T15:00:00Z"); // 16 h : une sortie est apparue entre-temps
+check(soirPushes().length === 2 && soirPushes()[1].payload.body.includes("Surprise") && !soirPushes()[1].payload.body.includes("Matin"),
+  "16 h : la sortie apparue après 11 h est notifiée (seule)");
+await runCron("2026-11-21T16:00:00Z");
+check(soirPushes().length === 2, "17 h : pas de doublon");
+robotFile.byCountry.fr.push({ ...rel[0], id: "s3", title: "Nuit", date: "2026-11-22T00:00:00Z" });
+await runCron("2026-11-22T03:00:00Z"); // 4 h du matin : on attend le récap de 11 h
+check(soirPushes().length === 2, "la nuit : pas de notification, la sortie attend le récap de 11 h");
 
 check((await call("GET", "/api/token")).status === 404, "jeton Apple Music : absent tant que non configuré");
 

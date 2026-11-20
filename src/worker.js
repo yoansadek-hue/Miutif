@@ -208,8 +208,10 @@ async function hourlyRun(env, now) {
       if (hour === PLAYLIST_HOUR && user.playlists?.length && user.playlistDay !== day) {
         await refreshPlaylists(env, key, user, day);
       }
-      if (hour === NOTIFY_HOUR && user.sub && user.artists?.length && user.lastRun !== day) {
-        data ||= await releaseData(env); // lu une seule fois, et seulement s'il y a quelqu'un à notifier
+      // 11 h : le récap de la nuit et de la matinée ; ensuite, chaque heure jusqu'à minuit,
+      // une notification pour les sorties apparues depuis (rien si aucune sortie nouvelle)
+      if (hour >= NOTIFY_HOUR && user.sub && user.artists?.length) {
+        data ||= await releaseData(env); // lu une seule fois par réveil, et seulement s'il y a quelqu'un à notifier
         await notifyUser(env, key, user, data, keys, now, day);
       }
     } catch (e) {
@@ -250,6 +252,7 @@ async function notifyUser(env, key, user, data, keys, now, day) {
     if (status === 404 || status === 410) delete user.sub; // notifications coupées sur le téléphone
   }
 
+  if (!fresh.length && user.lastRun === day) return; // rien de neuf : pas d'écriture inutile
   for (const r of fresh) notified[r.id] = now.getTime();
   for (const [id, t] of Object.entries(notified)) if (now.getTime() - t > 60 * 86400000) delete notified[id];
   user.notified = notified;

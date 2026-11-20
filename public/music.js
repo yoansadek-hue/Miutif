@@ -104,10 +104,18 @@ function toRelease(c, followedId) {
  * Garde les sorties déjà parues depuis moins de `days` jours, les plus récentes d'abord.
  * `dedupe` : Apple publie parfois la même sortie sous deux fiches, on n'en garde qu'une.
  */
+/**
+ * Une sortie compte comme parue dès son jour de sortie (Apple met souvent une heure arbitraire, ex. 08:00 UTC) :
+ * elle ne reste pas dans « À venir » le jour même.
+ */
+export function isReleased(r, now = Date.now()) {
+  return String(r.date).slice(0, 10) <= new Date(now).toLocaleDateString("en-CA");
+}
+
 export function filterRecent(releases, { days = 30, now = Date.now(), dedupe = true } = {}) {
   const seen = new Set();
   return releases
-    .filter((r) => { const t = Date.parse(r.date); return t <= now && now - t <= days * 86400000; })
+    .filter((r) => isReleased(r, now) && now - Date.parse(r.date) <= days * 86400000)
     .sort((a, b) => b.date.localeCompare(a.date))
     .filter((r) => {
       if (!dedupe) return true;
@@ -264,7 +272,7 @@ async function lookupReleases(artistIds, country) {
 export function filterUpcoming(releases, { days = 180, now = Date.now() } = {}) {
   const seen = new Set();
   return releases
-    .filter((r) => { const t = Date.parse(r.date); return t > now && t - now <= days * 86400000; })
+    .filter((r) => !isReleased(r, now) && Date.parse(r.date) - now <= days * 86400000)
     .sort((a, b) => a.date.localeCompare(b.date))
     .filter((r) => { const k = `${r.artist}|${r.title}`.toLowerCase(); return !seen.has(k) && seen.add(k); });
 }

@@ -1,5 +1,5 @@
 // Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
-import { searchArtists, playlistUrl, artistCatalog, featOf, catalogReleases } from "./music.js?v=13";
+import { searchArtists, playlistUrl, artistCatalog, featOf, catalogReleases, isReleased } from "./music.js?v=14";
 
 const $ = (s) => document.querySelector(s);
 const store = {
@@ -801,7 +801,7 @@ function countdown(iso) {
 }
 
 function renderUpcoming() {
-  const list = upcoming;
+  const list = upcoming.filter((r) => !isReleased(r)); // sortie entre-temps : elle passe dans Nouveautés
   $("#upcoming").innerHTML = list.length ? `
     <section class="day upcoming">
       <div class="day-head"><h2>À venir</h2><p>${plural(list.length, "sortie")} annoncée${list.length > 1 ? "s" : ""}</p></div>
@@ -850,7 +850,9 @@ function renderNews(loading = false) {
     $("#news-empty").hidden = true;
     return;
   }
-  const shown = releases;
+  // les sorties « à venir » parues depuis le dernier chargement s'affichent tout de suite dans Nouveautés
+  const ids = new Set(releases.map((r) => r.id));
+  const shown = [...releases, ...upcoming.filter((r) => isReleased(r) && !ids.has(r.id))].sort((x, y) => y.date.localeCompare(x.date));
   $("#news-empty").hidden = shown.length > 0;
   if (!artists.length) $("#news-empty").textContent = "Ajoute des artistes (onglet Artistes) ou une playlist (Réglages).";
   else $("#news-empty").textContent = "Aucune sortie ces 30 derniers jours pour tes artistes.";
