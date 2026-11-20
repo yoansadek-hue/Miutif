@@ -251,22 +251,30 @@ async function refreshPlaylists(env, key, user, day) {
   await env.DB.put(key, JSON.stringify(user));
 }
 
+// Historique des notifications : dans une fiche à part (n:<id>), écrite seulement ici.
+// (Avant, il était dans la fiche du compte, que l'app réécrit aussi : une copie pas encore à jour
+//  pouvait effacer la trace d'une notif, qui repartait l'heure suivante.)
+const releaseKey = (r) => `t:${r.artist}|${r.title}`.toLowerCase(); // même sortie sous deux identifiants Apple
 async function notifyUser(env, key, user, data, keys, now, day) {
-  const notified = user.notified || {};
-  const fresh = releasesFor(user, data, { days: NEW_DAYS, now: now.getTime() }).filter((r) => !notified[r.id]);
+  const nkey = `n:${key.slice(2)}`;
+  const log = (await env.DB.get(nkey, "json")) || { notified: user.notified || {}, lastRun: user.lastRun || null };
+  const notified = log.notified;
+  const fresh = releasesFor(user, data, { days: NEW_DAYS, now: now.getTime() })
+    .filter((r) => !notified[r.id] && !notified[releaseKey(r)]);
 
   if (fresh.length) {
     const names = Object.fromEntries((user.artists || []).map((a) => [a.id, a.name]));
     const status = await sendPush(user.sub, recapPayload(fresh, day, names), keys);
-    if (status === 404 || status === 410) delete user.sub; // notifications coupées sur le téléphone
+    if (status === 404 || status === 410) { // notifications coupées sur le téléphone
+      delete user.sub;
+      await env.DB.put(key, JSON.stringify(user));
+    }
   }
 
-  if (!fresh.length && user.lastRun === day) return; // rien de neuf : pas d'écriture inutile
-  for (const r of fresh) notified[r.id] = now.getTime();
+  if (!fresh.length && log.lastRun === day) return; // rien de neuf : pas d'écriture inutile
+  for (const r of fresh) { notified[r.id] = now.getTime(); notified[releaseKey(r)] = now.getTime(); }
   for (const [id, t] of Object.entries(notified)) if (now.getTime() - t > 60 * 86400000) delete notified[id];
-  user.notified = notified;
-  user.lastRun = day;
-  await env.DB.put(key, JSON.stringify(user));
+  await env.DB.put(nkey, JSON.stringify({ notified, lastRun: day }));
 }
 
 /** Une seule notification. 1 sortie : elle s'ouvre dans Apple Music. Plusieurs : l'onglet Nouveautés. */

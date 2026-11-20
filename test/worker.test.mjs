@@ -105,6 +105,7 @@ const runCron = async (iso) => {
   await Promise.all(jobs);
 };
 const user = (id) => JSON.parse(kv.get(`u:${id}`));
+const notes = (id) => JSON.parse(kv.get(`n:${id}`) || "{}"); // historique des notifications (fiche à part)
 
 // --- Catalogue (module partagé app / robot)
 const found = await searchArtists("artiste");
@@ -200,7 +201,7 @@ const calme = "calme0123456789abcdef";
 await call("POST", "/api/sync", { id: calme, tz: "Europe/Paris", artists: [{ id: "999", name: "Silencieux" }], subscription: phone("calme") });
 // --- 11 h : une seule notification récap
 await runCron("2026-11-18T10:00:00Z");
-check(!pushes.some((p) => p.url.endsWith("/calme")) && user(calme).lastRun === "2026-11-18", "11 h : aucune sortie chez ses artistes → aucune notification");
+check(!pushes.some((p) => p.url.endsWith("/calme")) && notes(calme).lastRun === "2026-11-18", "11 h : aucune sortie chez ses artistes → aucune notification");
 check(of("paris").length === 1, "11 h : UNE seule notification pour 2 sorties");
 const recap = of("paris")[0]?.payload;
 check(recap?.title === "2 nouvelles sorties" && recap.body.includes("Artiste A — Neuf") && recap.body.includes("Artiste B — Album B"), "11 h : le récap liste les sorties");
@@ -218,9 +219,9 @@ check(of("tokyo").length === 1 && tk.payload.title === "Nouveau single de Artist
 check((await call("POST", "/api/test", { id })).status === 404, "version finale : plus de notification de test");
 
 robotFile = null;
-kv.set(`u:${id}`, JSON.stringify({ ...user(id), notified: {}, lastRun: null }));
+kv.delete(`n:${id}`);
 await runCron("2026-11-20T10:00:00Z");
-check(of("paris").length === 1 && user(id).lastRun === null, "fichier du robot absent : rien d'envoyé, on réessaiera");
+check(of("paris").length === 1 && notes(id).lastRun === undefined, "fichier du robot absent : rien d'envoyé, on réessaiera");
 
 pushStatus = 410;
 robotFile = { byCountry: { fr: [{ ...rel[0], date: day(0.1) }] } };
@@ -276,6 +277,18 @@ await runCron("2026-11-23T14:00:00Z"); // 15 h
 check(of("tot").length === 2 && of("calm2").length === 1, "15 h : nouvelle sortie notifiée, sauf en mode silencieux");
 await runCron("2026-11-24T10:00:00Z"); // lendemain 11 h
 check(of("calm2").length === 2 && of("calm2")[1].payload.body.includes("Après-midi"), "mode silencieux : la sortie de l'après-midi arrive dans le récap du lendemain");
+
+// --- l'app réécrit le compte juste après la notif : la notif n'est pas renvoyée l'heure suivante
+const course = "course0123456789abcde";
+await call("POST", "/api/sync", { id: course, tz: "Europe/Paris", artists: [{ id: "111", name: "A" }], subscription: phone("course") });
+const vieux = kv.get(`u:${course}`); // copie du compte lue par l'app avant la notif
+robotFile = { byCountry: { fr: [{ ...rel[0], id: "c1", title: "Course", date: "2026-11-25T00:00:00Z" }, { ...rel[0], id: "c2", title: "Course", date: "2026-11-25T00:00:00Z" }] } };
+await runCron("2026-11-25T10:00:00Z"); // 11 h
+kv.set(`u:${course}`, vieux); // l'app réécrit sa vieille copie
+await call("POST", "/api/sync", { id: course, artists: [{ id: "111", name: "A" }] });
+await runCron("2026-11-25T11:00:00Z"); // 12 h
+check(of("course").length === 1, "12 h : pas la même notif qu'à 11 h, même si l'app a réécrit le compte entre-temps");
+check(of("course")[0].payload.title.startsWith("Nouveau single"), "même sortie sous deux identifiants Apple : notifiée une seule fois");
 
 check((await call("GET", "/api/token")).status === 404, "jeton Apple Music : absent tant que non configuré");
 
