@@ -78,7 +78,7 @@
       </label>
       <ul class="list results" id="results" hidden></ul>
       <div id="artists"></div>
-      <p class="empty" id="artists-empty">Ajoute une playlist dans Réglages, ou cherche un artiste ci-dessus.</p>
+      <p class="empty" id="artists-empty">Ajoute une playlist ou cherche un artiste.</p>
     </section>
     </div>
 
@@ -92,12 +92,12 @@
 
       <div class="notice" id="install" hidden>
         <b>Ajoute Miutif à l'écran d'accueil</b>
-        Dans Safari, touche Partager puis « Sur l'écran d'accueil ». Les notifications ne marchent que depuis l'icône.
+        Safari › Partager › Sur l'écran d'accueil.
       </div>
       <div id="upcoming"></div>
-      <div class="news-tools"><button class="link" id="mark-all" hidden>Tout marquer comme écouté</button></div>
+      <div class="news-tools"><button class="link" id="mark-all" hidden>Tout marquer lu</button></div>
       <div id="news"></div>
-      <p class="empty" id="news-empty" hidden>Aucune sortie ces 30 derniers jours pour tes artistes.</p>
+      <p class="empty" id="news-empty" hidden>Aucune sortie ces 30 derniers jours.</p>
     </section>
     </div>
 
@@ -118,7 +118,7 @@
           <input type="checkbox" class="switch" id="quiet-switch" role="switch" aria-label="Mode silencieux">
         </label>
       </div>
-      <p class="group-foot" id="notif-foot">Une seule notification par jour avec toutes les nouvelles sorties de tes artistes.</p>
+      <p class="group-foot" id="notif-foot"></p>
 
       <h2 class="group-title">Playlists</h2>
       <div class="group" id="playlists"></div>
@@ -129,8 +129,8 @@
         <button class="row action" id="pl-add">Coller le lien et ajouter</button>
       </div>
       <p class="field-error" id="pl-error" hidden></p>
-      <p class="group-foot">Dans Apple Music : ouvre la playlist › ••• › Partager › Copier le lien. Ajoute autant de playlists que tu veux : leurs artistes sont suivis, et chaque playlist est relue tous les jours.</p>
-      <p class="group-foot">Apple ne partage que les 300 premiers titres d'une playlist. Si la tienne est plus longue, les artistes des titres suivants ne sont pas ajoutés : ajoute-les depuis l'onglet Artistes.</p>
+      <p class="group-foot">Apple Music › playlist › ••• › Partager › Copier le lien. 300 titres max par playlist.</p>
+
 
       <div class="group" id="am-group" hidden>
         <button class="row action" id="am-import">Importer ma librairie Apple Music</button>
@@ -209,7 +209,7 @@
     <div class="ob">
       <img class="ob-logo" src="/icons/icon-192.png?v=3" alt="">
       <h1>Bienvenue sur Miutif</h1>
-      <p class="sub">Chaque jour à 11 h, les nouvelles sorties des artistes de ta playlist.</p>
+      <p class="sub">Les sorties de tes artistes, chaque jour.</p>
 
       <h2 class="group-title">1 · Ta playlist Apple Music</h2>
       <div class="group" id="ob-playlists"></div>
@@ -220,11 +220,11 @@
         <button class="row action" id="ob-add">Coller le lien</button>
       </div>
       <p class="field-error" id="ob-error" hidden></p>
-      <p class="group-foot">Dans Apple Music : ouvre ta playlist › ••• › Partager › Copier le lien. Seuls les 300 premiers titres d'une playlist sont lus.</p>
+      <p class="group-foot">Apple Music › playlist › ••• › Partager › Copier le lien.</p>
 
       <h2 class="group-title">2 · Notifications</h2>
       <div class="group"><button class="row action" id="ob-notif">Activer les notifications</button></div>
-      <p class="group-foot" id="ob-notif-foot">Une seule notification par jour, à 11 h.</p>
+      <p class="group-foot" id="ob-notif-foot">Un récap par jour.</p>
 
       <button class="start" id="ob-start" disabled>Commencer</button>
     </div>
@@ -244,6 +244,6 @@
   </div>
 </div>
 
-<script src="/app.js?v=38" type="module"></script>
+<script src="/app.js?v=39" type="module"></script>
 </body>
 </html>
