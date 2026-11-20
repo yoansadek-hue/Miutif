@@ -544,7 +544,7 @@ async function removeArtist(id) {
   const a = artists.find((x) => x.id === id);
   if (!a) return;
   const pp = `${initial(a.name)}<img src="${photo(a.id)}" alt="">`;
-  if (!(await confirmBox("Supprimer cet artiste ?", `Plus de notifs pour ${a.name}.`, "Supprimer", pp))) return;
+  if (!(await confirmBox("Supprimer cet artiste ?", `Voulez-vous vraiment supprimer ${a.name} ? Tu ne seras plus prévenu de ses sorties.`, "Supprimer", pp))) return;
   await animateRemoval(document.querySelector(`#artists [data-remove="${CSS.escape(id)}"]`)?.closest("li"));
   unfollowArtist(id);
 }
@@ -679,7 +679,7 @@ async function openArtist(id, fallbackName = "") {
   };
   $("#sheet-disco").innerHTML = own.length || appearances.length
     ? section("latest") + section("albums") + section("singles") + section("appearances")
-    : '<p class="empty">Discographie indisponible.</p>';
+    : '<p class="empty">Discographie indisponible pour le moment.</p>';
   if (info.status === "fulfilled" && info.value.image) sheetPhoto = info.value.image;
   similarList = info.status === "fulfilled" ? info.value.similar || [] : [];
   renderSimilar();
@@ -856,8 +856,8 @@ function renderNews(loading = false) {
   const ids = new Set(releases.map((r) => r.id));
   const shown = [...releases, ...upcoming.filter((r) => isReleased(r) && !ids.has(r.id))].sort((x, y) => y.date.localeCompare(x.date));
   $("#news-empty").hidden = shown.length > 0;
-  if (!artists.length) $("#news-empty").textContent = "Ajoute des artistes ou une playlist.";
-  else $("#news-empty").textContent = "Aucune sortie ces 30 derniers jours.";
+  if (!artists.length) $("#news-empty").textContent = "Ajoute des artistes (onglet Artistes) ou une playlist (Réglages).";
+  else $("#news-empty").textContent = "Aucune sortie ces 30 derniers jours pour tes artistes.";
 
   const groups = new Map();
   for (const r of shown) {
@@ -1037,8 +1037,8 @@ function renderOnboardNotif(on) {
   b.textContent = on ? "Notifications activées ✓"
     : isIOS && !standalone ? "Ajoute d'abord Miutif à l'écran d'accueil" : "Activer les notifications";
   $("#ob-notif-foot").textContent = isIOS && !standalone && !on
-    ? "Safari › Partager › Sur l'écran d'accueil."
-    : "Un récap par jour.";
+    ? "Dans Safari : Partager › Sur l'écran d'accueil, puis ouvre Miutif depuis son icône."
+    : "Une seule notification par jour, à 11 h.";
 }
 
 /** Affiché tout de suite au lancement tant que l'app n'est pas prête (playlist + notifications). */
@@ -1406,7 +1406,7 @@ async function onUnfollowClick(e) {
   if (!url) return;
   const p = playlists.find((x) => x.url === url);
   const cover = p?.cover ? `<img src="${esc(p.cover)}" alt="">` : "♪";
-  if (!(await confirmBox("Supprimer cette playlist ?", `Ses artistes restent suivis.`, "Supprimer", cover, true))) return;
+  if (!(await confirmBox("Supprimer cette playlist ?", `Voulez-vous vraiment supprimer ${p?.title || "cette playlist"} ? Ses artistes restent suivis, mais ses nouveaux artistes ne seront plus ajoutés.`, "Supprimer", cover, true))) return;
   await animateRemoval(btn.closest(".row"));
   playlists = playlists.filter((p) => p.url !== url);
   renderPlaylists();

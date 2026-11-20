@@ -78,7 +78,7 @@
       </label>
       <ul class="list results" id="results" hidden></ul>
       <div id="artists"></div>
-      <p class="empty" id="artists-empty">Ajoute une playlist ou cherche un artiste.</p>
+      <p class="empty" id="artists-empty">Ajoute une playlist dans Réglages, ou cherche un artiste ci-dessus.</p>
     </section>
     </div>
 
@@ -92,12 +92,12 @@
 
       <div class="notice" id="install" hidden>
         <b>Ajoute Miutif à l'écran d'accueil</b>
-        Safari › Partager › Sur l'écran d'accueil.
+        Dans Safari, touche Partager puis « Sur l'écran d'accueil ». Les notifications ne marchent que depuis l'icône.
       </div>
       <div id="upcoming"></div>
-      <div class="news-tools"><button class="link" id="mark-all" hidden>Tout marquer lu</button></div>
+      <div class="news-tools"><button class="link" id="mark-all" hidden>Tout marquer comme écouté</button></div>
       <div id="news"></div>
-      <p class="empty" id="news-empty" hidden>Aucune sortie ces 30 derniers jours.</p>
+      <p class="empty" id="news-empty" hidden>Aucune sortie ces 30 derniers jours pour tes artistes.</p>
     </section>
     </div>
 
@@ -209,7 +209,7 @@
     <div class="ob">
       <img class="ob-logo" src="/icons/icon-192.png?v=3" alt="">
       <h1>Bienvenue sur Miutif</h1>
-      <p class="sub">Les sorties de tes artistes, chaque jour.</p>
+      <p class="sub">Chaque jour à 11 h, les nouvelles sorties des artistes de ta playlist.</p>
 
       <h2 class="group-title">1 · Ta playlist Apple Music</h2>
       <div class="group" id="ob-playlists"></div>
@@ -220,11 +220,11 @@
         <button class="row action" id="ob-add">Coller le lien</button>
       </div>
       <p class="field-error" id="ob-error" hidden></p>
-      <p class="group-foot">Apple Music › playlist › ••• › Partager › Copier le lien.</p>
+      <p class="group-foot">Dans Apple Music : ouvre ta playlist › ••• › Partager › Copier le lien. Seuls les 300 premiers titres d'une playlist sont lus.</p>
 
       <h2 class="group-title">2 · Notifications</h2>
       <div class="group"><button class="row action" id="ob-notif">Activer les notifications</button></div>
-      <p class="group-foot" id="ob-notif-foot">Un récap par jour.</p>
+      <p class="group-foot" id="ob-notif-foot">Une seule notification par jour, à 11 h.</p>
 
       <button class="start" id="ob-start" disabled>Commencer</button>
     </div>
@@ -244,6 +244,6 @@
   </div>
 </div>
 
-<script src="/app.js?v=39" type="module"></script>
+<script src="/app.js?v=40" type="module"></script>
 </body>
 </html>
