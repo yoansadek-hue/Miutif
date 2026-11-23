@@ -229,15 +229,15 @@ await runCron("2026-11-20T10:00:00Z");
 check(!user(id).sub, "abonnement mort (notifs coupées) : supprimé");
 
 // --- lancement du robot par le réveil de Cloudflare (à :45)
-const robotCron = async () => { const jobs = []; await worker.scheduled({ cron: "45 * * * *", scheduledTime: NOW }, env, { waitUntil: (p) => jobs.push(p) }); await Promise.all(jobs); };
+const robotCron = async () => { const jobs = []; await worker.scheduled({ cron: "0,15,30,45 * * * *", scheduledTime: NOW }, env, { waitUntil: (p) => jobs.push(p) }); await Promise.all(jobs); };
 await robotCron();
 check(dispatches.length === 0, "robot : rien n'est lancé tant que le jeton GitHub n'est pas configuré");
 env.GITHUB_TOKEN = "jeton-test";
 const before = pushes.length;
 await robotCron();
 check(dispatches.length === 1 && dispatches[0].url.endsWith("/actions/workflows/sorties.yml/dispatches") && dispatches[0].auth === "Bearer jeton-test" && JSON.parse(dispatches[0].body).ref === "main",
-  "robot : lancé à :45 par Cloudflare via l'API GitHub");
-check(pushes.length === before, "robot : le réveil de :45 n'envoie aucune notification");
+  "robot : lancé toutes les 15 min par Cloudflare via l'API GitHub");
+check(pushes.length === before, "robot : le réveil du robot n'envoie aucune notification");
 delete env.GITHUB_TOKEN;
 
 // --- une sortie qui apparaît après le récap de 11 h est notifiée à l'heure suivante

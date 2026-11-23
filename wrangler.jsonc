@@ -10,6 +10,7 @@
   "vars": { "DATA_URL": "https://raw.githubusercontent.com/yoansadek-hue/Miutif/data/releases.json" },
   // Réveil toutes les heures : chaque téléphone est notifié quand il est 11 h chez lui.
   // et à :45, il lance le robot GitHub (secret GITHUB_TOKEN), pour des nouveautés toujours fraîches.
-  "triggers": { "crons": ["0 * * * *", "45 * * * *"] },
+  // robot GitHub lancé toutes les 15 min ; notifications 3 min après chaque passage (le temps qu'il publie)
+  "triggers": { "crons": ["0,15,30,45 * * * *", "3,18,33,48 * * * *"] },
   "observability": { "enabled": true }
 }

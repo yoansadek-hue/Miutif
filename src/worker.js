@@ -43,7 +43,8 @@ export default {
 // GitHub ne garantit pas ses tâches planifiées (sur un petit dépôt, elles peuvent sauter des heures entières).
 // Le réveil de Cloudflare, lui, est précis : il lance le robot à :45 chaque heure (donc à 10 h 45, avant la notif de 11 h).
 // Il faut un jeton GitHub (secret GITHUB_TOKEN) autorisé à lancer les « Actions » du dépôt.
-const ROBOT_CRON = "45 * * * *";
+// toutes les 15 min : Apple publie ses nouveautés dans son API avec du retard, il faut repasser souvent
+const ROBOT_CRON = "0,15,30,45 * * * *";
 async function startRobot(env) {
   if (!env.GITHUB_TOKEN) return 0;
   const res = await fetch(`https://api.github.com/repos/${env.GITHUB_REPO || "yoansadek-hue/Miutif"}/actions/workflows/sorties.yml/dispatches`, {
@@ -258,6 +259,7 @@ const releaseKey = (r) => `t:${r.artist}|${r.title}`.toLowerCase(); // même sor
 async function notifyUser(env, key, user, data, keys, now, day) {
   const nkey = `n:${key.slice(2)}`;
   const log = (await env.DB.get(nkey, "json")) || { notified: user.notified || {}, lastRun: user.lastRun || null };
+  if (user.quiet && log.lastRun === day) return; // mode silencieux : un seul récap par jour
   const notified = log.notified;
   const fresh = releasesFor(user, data, { days: NEW_DAYS, now: now.getTime() })
     .filter((r) => !notified[r.id] && !notified[releaseKey(r)]);
