@@ -1,4 +1,4 @@
-// Miutif : suivre ses artistes et être prévenu de leurs sorties à 11 h.
+// Miutif : suivre ses artistes et être prévenu de leurs sorties à 9 h.
 import { searchArtists, playlistUrl, artistCatalog, featOf, catalogReleases, isReleased } from "./music.js?v=14";
 
 const $ = (s) => document.querySelector(s);
@@ -23,9 +23,9 @@ let excluded = new Set(store.get("excluded", [])); // artistes retirés à la ma
 let releases = store.get("releases", []);
 let upcoming = store.get("upcoming", []);               // sorties à venir (précommandes)
 let seen = new Set(store.get("seen", []));              // sorties déjà ouvertes (sans pastille)
-let notifyHour = store.get("notifyHour", 11); // heure du récap
+let notifyHour = store.get("notifyHour", 9); // heure du récap
 let quiet = store.get("quiet", false);          // mode silencieux : seulement le récap
-let config = { hour: 11, appleMusic: false, vapidKey: null, country: store.get("country", "fr") };
+let config = { hour: 9, appleMusic: false, vapidKey: null, country: store.get("country", "fr") };
 
 // ---------- Utilitaires ----------
 
@@ -1038,7 +1038,7 @@ function renderOnboardNotif(on) {
     : isIOS && !standalone ? "Ajoute d'abord Miutif à l'écran d'accueil" : "Activer les notifications";
   $("#ob-notif-foot").textContent = isIOS && !standalone && !on
     ? "Dans Safari : Partager › Sur l'écran d'accueil, puis ouvre Miutif depuis son icône."
-    : "Une seule notification par jour, à 11 h.";
+    : "Une seule notification par jour, à 9 h.";
 }
 
 /** Affiché tout de suite au lancement tant que l'app n'est pas prête (playlist + notifications). */
